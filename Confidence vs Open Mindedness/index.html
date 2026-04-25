@@ -614,7 +614,8 @@
   // ── drawing ───────────────────────────────────────────────────────────────
 
   function draw() {
-    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#161a21';
+    ctx.fillRect(0, 0, W, H);
     const { x: gx, y: gy } = goalPos();
 
     // grid
