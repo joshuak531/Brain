@@ -20,13 +20,26 @@
     font: 14px/1.45 -apple-system, system-ui, Segoe UI, Helvetica, Arial, sans-serif;
     background: var(--bg); color: var(--text);
   }
-  header { padding: 14px 20px; border-bottom: 1px solid var(--line); }
-  h1 { margin: 0 0 2px; font-size: 16px; font-weight: 600; }
-  .sub { color: var(--muted); font-size: 12.5px; max-width: 760px; }
+  header {
+    padding: 13px 22px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 14px;
+  }
+  .back {
+    color: var(--muted); text-decoration: none; font-size: 12px;
+    display: flex; align-items: center; gap: 4px; transition: color .1s;
+    flex-shrink: 0;
+  }
+  .back:hover { color: var(--text); }
+  h1 { margin: 0; font-size: 15px; font-weight: 600; flex: 1; }
+  .tag {
+    font-size: 10.5px; font-weight: 600; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--om); flex-shrink: 0;
+  }
+  .sub { display: none; }
   main {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 300px;
-    height: calc(100vh - 56px);
+    height: calc(100vh - 48px);
   }
   #stage { padding: 16px; display: flex; flex-direction: column; min-width: 0; }
   canvas {
@@ -132,10 +145,9 @@
 </head>
 <body>
 <header>
+  <a href="../index.html" class="back">← Experiments</a>
   <h1>Confidence vs Open-Mindedness</h1>
-  <div class="sub">
-    Everyone uses the same fixed move length. Open-mindedness means physically testing candidate directions before each move; confidence means picking one random heading and going straight.
-  </div>
+  <span class="tag">Decision-making · Agent simulation</span>
 </header>
 <main>
   <div id="stage">
