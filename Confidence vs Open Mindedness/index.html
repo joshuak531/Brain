@@ -173,6 +173,7 @@
     <div class="group">
       <h3>Confident Society Size</h3>
       <div class="presets" id="popPresets">
+        <button data-val="0">0</button>
         <button data-val="1">1</button>
         <button data-val="50">50</button>
         <button data-val="200" class="active">200</button>
@@ -181,7 +182,7 @@
       </div>
       <div class="text-input">
         <span>Custom:</span>
-        <input type="number" id="popInput" min="1" max="99999" value="200">
+        <input type="number" id="popInput" min="0" max="99999" value="200">
       </div>
       <div style="margin-top:10px;">
         <div style="font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">Distribution</div>
@@ -439,7 +440,7 @@
     });
     if (input) {
       input.addEventListener('change', () => {
-        const lo = +(input.min || 1), hi = +(input.max || 999999);
+        const lo = input.min !== '' ? +input.min : 1, hi = +(input.max || 999999);
         const v = Math.max(lo, Math.min(hi, +input.value || lo));
         input.value = v;
         params[paramKey] = v;
@@ -755,7 +756,7 @@
       lines.push('<div class="winner">No agent reached the goal this run</div>');
     } else {
       const omCount = omAgents.length;
-      const confLabel = params.pop === 1 ? 'one guess' : `${params.pop} guesses`;
+      const confLabel = params.pop === 0 ? 'no confident agents' : params.pop === 1 ? 'one guess' : `${params.pop} guesses`;
       lines.push(`<div class="winner">${omCount} tester${omCount !== 1 ? 's' : ''} vs ${confLabel}</div>`);
     }
 
