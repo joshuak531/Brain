@@ -177,12 +177,14 @@ const st = {
   actors:    [],
   traces:    [],
   pan:       { x: 0, y: 0 },
-  dragging:  false,
-  dragOff:   { x: 0, y: 0 },
-  panning:   false,
-  panStart:  { x: 0, y: 0 },
-  panOrigin: { x: 0, y: 0 },
-  mouse:     null,              // screen coords
+  dragging:      false,
+  dragOff:       { x: 0, y: 0 },
+  draggingActor: -1,
+  actorDragOff:  { x: 0, y: 0 },
+  panning:       false,
+  panStart:      { x: 0, y: 0 },
+  panOrigin:     { x: 0, y: 0 },
+  mouse:         null,              // screen coords
 };
 
 // ── Coordinate conversion ─────────────────────────────────────────────────────
@@ -359,13 +361,13 @@ function render() {
 
   // Cursor
   let cursor = 'default';
-  if (st.dragging || st.panning) {
+  if (st.dragging || st.draggingActor !== -1 || st.panning) {
     cursor = 'grabbing';
   } else if (st.mouse) {
     const w = toWorld(st.mouse.x, st.mouse.y);
     if (Math.hypot(w.x - st.dec.x, w.y - st.dec.y) <= 18) cursor = 'grab';
-    else if (hoveredActor !== -1)                           cursor = 'pointer';
-    else                                                     cursor = 'grab';
+    else if (hoveredActor !== -1)                           cursor = 'grab';
+    else                                                    cursor = 'grab';
   }
   canvas.style.cursor = cursor;
 }
@@ -379,6 +381,10 @@ canvas.addEventListener('mousemove', e => {
   if (st.dragging) {
     const w = toWorld(screen.x, screen.y);
     st.dec = { x: w.x - st.dragOff.x, y: w.y - st.dragOff.y };
+    buildTraces();
+  } else if (st.draggingActor !== -1) {
+    const w = toWorld(screen.x, screen.y);
+    st.actors[st.draggingActor] = { x: w.x - st.actorDragOff.x, y: w.y - st.actorDragOff.y };
     buildTraces();
   } else if (st.panning) {
     st.pan.x = st.panOrigin.x + (screen.x - st.panStart.x);
@@ -397,22 +403,30 @@ canvas.addEventListener('mousedown', e => {
     st.dragging = true;
     st.dragOff  = { x: w.x - st.dec.x, y: w.y - st.dec.y };
   } else {
-    st.panning   = true;
-    st.panStart  = { ...screen };
-    st.panOrigin = { ...st.pan };
+    const ai = st.actors.findIndex(a => Math.hypot(a.x - w.x, a.y - w.y) <= 14);
+    if (ai !== -1) {
+      st.draggingActor = ai;
+      st.actorDragOff  = { x: w.x - st.actors[ai].x, y: w.y - st.actors[ai].y };
+    } else {
+      st.panning   = true;
+      st.panStart  = { ...screen };
+      st.panOrigin = { ...st.pan };
+    }
   }
 });
 
 window.addEventListener('mouseup', () => {
-  st.dragging = false;
-  st.panning  = false;
+  st.dragging      = false;
+  st.draggingActor = -1;
+  st.panning       = false;
   render();
 });
 
 canvas.addEventListener('mouseleave', () => {
-  st.mouse    = null;
-  st.dragging = false;
-  st.panning  = false;
+  st.mouse         = null;
+  st.dragging      = false;
+  st.draggingActor = -1;
+  st.panning       = false;
   render();
 });
 
