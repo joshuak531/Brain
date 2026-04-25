@@ -69,12 +69,6 @@
     border: 1px solid var(--line); border-radius: 4px; font: inherit; font-size: 12.5px;
   }
   input[type=number]:focus { outline: none; border-color: var(--accent); }
-  .mode { display: flex; gap: 6px; background: var(--panel); padding: 4px; border-radius: 6px; }
-  .mode button {
-    flex: 1; padding: 7px 8px; background: transparent; color: var(--muted);
-    border: none; border-radius: 4px; cursor: pointer; font: inherit; font-size: 12.5px;
-  }
-  .mode button.active { background: var(--accent); color: white; }
   .actions { display: flex; gap: 6px; margin-top: 14px; }
   .actions button {
     flex: 1; padding: 9px; background: var(--accent); color: white;
@@ -92,11 +86,9 @@
   #status .row { display: flex; justify-content: space-between; gap: 8px; }
   #status .row .k { color: var(--muted); }
   #status .row .v { font-variant-numeric: tabular-nums; }
-  .conf-only { display: none; }
-  body[data-mode="society"] .conf-only { display: block; }
 </style>
 </head>
-<body data-mode="1v1">
+<body>
 <header>
   <h1>Confidence vs Open-Mindedness</h1>
   <div class="sub">
@@ -112,14 +104,6 @@
     </div>
   </div>
   <aside>
-    <div class="group">
-      <h3>Mode</h3>
-      <div class="mode">
-        <button id="mode1v1" class="active">1 v 1</button>
-        <button id="modeSwarm">Solo v Society</button>
-      </div>
-    </div>
-
     <div class="group">
       <h3>Open-minded Agent — Permutations</h3>
       <div class="presets" id="permPresets">
@@ -149,9 +133,10 @@
       </div>
     </div>
 
-    <div class="group conf-only">
+    <div class="group">
       <h3>Confident Society Size</h3>
       <div class="presets" id="popPresets">
+        <button data-val="1">1</button>
         <button data-val="50">50</button>
         <button data-val="200" class="active">200</button>
         <button data-val="1000">1 000</button>
@@ -159,7 +144,7 @@
       </div>
       <div class="text-input">
         <span>Custom:</span>
-        <input type="number" id="popInput" min="2" max="99999" value="200">
+        <input type="number" id="popInput" min="1" max="99999" value="200">
       </div>
     </div>
 
@@ -187,7 +172,6 @@
   let viewOX = 0;
   let viewOY = 0;
 
-  let mode = '1v1';
   let agents = [];
   let running = false;
   let rafId = null;
@@ -279,19 +263,6 @@
     reset();
   });
 
-  // ── mode ──────────────────────────────────────────────────────────────────
-
-  document.getElementById('mode1v1').addEventListener('click', () => setMode('1v1'));
-  document.getElementById('modeSwarm').addEventListener('click', () => setMode('society'));
-
-  function setMode(m) {
-    mode = m;
-    document.body.dataset.mode = m;
-    document.getElementById('mode1v1').classList.toggle('active', m === '1v1');
-    document.getElementById('modeSwarm').classList.toggle('active', m === 'society');
-    reset();
-  }
-
   // ── run / reset ───────────────────────────────────────────────────────────
 
   document.getElementById('run').addEventListener('click', () => {
@@ -377,16 +348,13 @@
     legTime = Math.max(8, Math.min(160, Math.round(10000 * WORLD_STEP / (params.goalDistance * params.omPerms))));
     maxMoves = Math.max(1200, Math.ceil(params.goalDistance / WORLD_STEP) * 3);
 
+    const swarm = params.pop > 1;
     agents.push(makeAgent('om', 'rgba(44,220,140,1)', { permutations: params.omPerms }));
-    if (mode === '1v1') {
-      agents.push(makeAgent('conf', 'rgba(255,122,89,1)', { heading: Math.random() * Math.PI * 2 }));
-    } else {
-      for (let i = 0; i < params.pop; i++) {
-        agents.push(makeAgent('conf', 'rgba(255,122,89,0.45)', {
-          heading: Math.random() * Math.PI * 2,
-          simplePath: true,
-        }));
-      }
+    for (let i = 0; i < params.pop; i++) {
+      agents.push(makeAgent('conf', swarm ? 'rgba(255,122,89,0.45)' : 'rgba(255,122,89,1)', {
+        heading: Math.random() * Math.PI * 2,
+        simplePath: swarm,
+      }));
     }
     for (const a of agents) planStep(a);
     updateStatus();
@@ -514,13 +482,13 @@
     const lines = [];
 
     if (winner && winner.finishedAt < Infinity) {
-      const name = winner.kind === 'om' ? 'Open-minded' : (mode === 'society' ? `Best of ${conf.length} confident` : 'Confident');
+      const name = winner.kind === 'om' ? 'Open-minded' : (params.pop > 1 ? `Best of ${conf.length} confident` : 'Confident');
       const col = winner.kind === 'om' ? 'var(--om)' : 'var(--conf)';
       lines.push(`<div class="winner" style="color:${col}">${name} reached the goal first</div>`);
     } else if (final) {
       lines.push('<div class="winner">No agent reached the goal this run</div>');
     } else {
-      lines.push(`<div class="winner">${mode === '1v1' ? 'One tester vs one guess' : 'One tester vs a crowd of guesses'}</div>`);
+      lines.push(`<div class="winner">${params.pop === 1 ? 'One tester vs one guess' : 'One tester vs a crowd of guesses'}</div>`);
     }
 
     if (om) {
@@ -528,10 +496,10 @@
       lines.push(`<div class="row"><span class="k">Testing cost</span><span class="v">${om.previewCount} dirs tested · ${om.travelLegs} legs</span></div>`);
     }
 
-    if (mode === '1v1' && conf[0]) {
+    if (params.pop === 1 && conf[0]) {
       lines.push(`<div class="row"><span class="k">Confident</span><span class="v">heading ${headingLabel(conf[0].heading)} · ${fmt(conf[0].finishedAt || 0)}</span></div>`);
       lines.push(`<div class="row"><span class="k">Closest miss</span><span class="v">${conf[0].closest.toFixed(0)} world units</span></div>`);
-    } else if (mode === 'society' && conf.length) {
+    } else if (params.pop > 1 && conf.length) {
       const arrived = conf.filter(a => a.finished && a.finishedAt < Infinity);
       const fastest = arrived.length ? Math.min(...arrived.map(a => a.finishedAt)) : null;
       const bestMiss = conf.reduce((b, a) => a.closest < b ? a.closest : b, Infinity);
@@ -581,7 +549,7 @@
       ctx.strokeStyle = isOM
         ? 'rgba(44,220,140,0.85)'
         : isWinner ? 'rgba(255,122,89,0.95)'
-        : mode === 'society' ? 'rgba(255,122,89,0.2)' : 'rgba(255,122,89,0.7)';
+        : params.pop > 1 ? 'rgba(255,122,89,0.2)' : 'rgba(255,122,89,0.7)';
 
       ctx.beginPath();
       ctx.moveTo(sx(a.path[0].x), sy(a.path[0].y));
@@ -631,7 +599,7 @@
     // agent dots
     for (const a of agents) {
       const isOM = a.kind === 'om';
-      const isSwarm = mode === 'society' && !isOM;
+      const isSwarm = params.pop > 1 && !isOM;
       ctx.fillStyle = a.color;
       ctx.beginPath(); ctx.arc(sx(a.x), sy(a.y), isOM ? 6 : isSwarm ? 2 : 5, 0, Math.PI * 2); ctx.fill();
       if (isOM) {
