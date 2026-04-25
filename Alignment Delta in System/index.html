@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Alignment Delta in System — Okkem</title>
+<style>
+:root {
+  --bg:     #0e1116;
+  --panel:  #161a21;
+  --line:   #232936;
+  --text:   #e6e6e6;
+  --muted:  #8a93a3;
+  --accent: #2c5cdc;
+  --cgreen: #2cdc8c;
+  --cblue:  #5b9cf6;
+  --cpurp:  #a855f7;
+  --cred:   #f87171;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; background: var(--bg); color: var(--text); overflow: hidden; }
+body {
+  font: 13px/1.5 -apple-system, system-ui, Segoe UI, Helvetica, Arial, sans-serif;
+  display: flex; flex-direction: column;
+}
+
+/* ── Header ── */
+.hd {
+  padding: 13px 22px;
+  border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: 14px;
+  flex-shrink: 0;
+}
+.back {
+  color: var(--muted); text-decoration: none; font-size: 12px;
+  display: flex; align-items: center; gap: 4px; transition: color .1s;
+}
+.back:hover { color: var(--text); }
+.hd-title { font-size: 15px; font-weight: 600; flex: 1; }
+.hd-tag {
+  font-size: 10.5px; font-weight: 600; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--cgreen);
+}
+
+/* ── Layout ── */
+.body { display: flex; flex: 1; overflow: hidden; }
+.canvas-area { flex: 1; position: relative; overflow: hidden; }
+canvas { display: block; }
+
+/* ── Sidebar ── */
+.sb {
+  width: 212px; background: var(--panel);
+  border-left: 1px solid var(--line);
+  display: flex; flex-direction: column;
+  overflow-y: auto; flex-shrink: 0;
+}
+.sb-sec { padding: 15px 15px; border-bottom: 1px solid var(--line); }
+.sb-label {
+  font-size: 10px; font-weight: 600; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 10px;
+}
+
+/* Mode toggle */
+.mode-row {
+  display: flex; background: var(--bg);
+  border: 1px solid var(--line); border-radius: 5px; overflow: hidden;
+}
+.mode-btn {
+  flex: 1; padding: 6px 8px; border: none; background: none;
+  color: var(--muted); font: inherit; font-size: 12px; font-weight: 500;
+  cursor: pointer; transition: all .12s;
+}
+.mode-btn.active { background: var(--accent); color: #fff; }
+.mode-btn:hover:not(.active) { color: var(--text); }
+
+/* Shape buttons */
+.shapes { display: flex; flex-direction: column; gap: 5px; }
+.shape-btn {
+  padding: 7px 10px; border: 1px solid var(--line); border-radius: 4px;
+  background: var(--bg); color: var(--muted); font: inherit; font-size: 11.5px;
+  cursor: pointer; text-align: left; transition: all .12s;
+}
+.shape-btn:hover { color: var(--text); border-color: #3d4f72; }
+.shape-btn.active { border-color: var(--accent); color: var(--text); background: rgba(44,92,220,.08); }
+
+/* Score */
+.score-grid {
+  display: grid; grid-template-columns: 1fr auto;
+  gap: 7px 8px; align-items: center;
+}
+.sc-key { font-size: 11.5px; color: var(--muted); }
+.sc-val { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+.regime-pill {
+  font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 3px;
+  text-transform: uppercase; letter-spacing: .06em;
+}
+
+/* Legend */
+.legend { display: flex; flex-direction: column; gap: 8px; }
+.leg-row { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); }
+.leg-sw { width: 22px; height: 4px; border-radius: 2px; flex-shrink: 0; }
+
+/* Reset */
+.reset-btn {
+  display: block; width: 100%; padding: 8px;
+  border: 1px solid var(--line); border-radius: 4px;
+  background: none; color: var(--muted); font: inherit; font-size: 12px;
+  cursor: pointer; transition: all .12s; text-align: center;
+}
+.reset-btn:hover { color: var(--text); border-color: #4a5568; }
+
+/* Manual mode hint */
+.hint { font-size: 11px; color: var(--muted); line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<div class="hd">
+  <a href="../index.html" class="back">← Experiments</a>
+  <span class="hd-title">Alignment Delta in System</span>
+  <span class="hd-tag">Decision theory · System dynamics</span>
+</div>
+
+<div class="body">
+  <div class="canvas-area">
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <div class="sb">
+
+    <div class="sb-sec">
+      <div class="sb-label">Mode</div>
+      <div class="mode-row">
+        <button class="mode-btn active" data-mode="manual">Manual</button>
+        <button class="mode-btn" data-mode="auto">Auto</button>
+      </div>
+    </div>
+
+    <div class="sb-sec">
+      <div class="sb-label">System Shape</div>
+      <div class="shapes">
+        <button class="shape-btn active" data-shape="linear">Linear</button>
+        <button class="shape-btn" data-shape="split">Split</button>
+        <button class="shape-btn" data-shape="surrounding">Surrounding</button>
+        <button class="shape-btn" data-shape="clustered">Clustered + Outlier</button>
+        <button class="shape-btn" data-shape="diagonal">Diagonal Scatter</button>
+      </div>
+    </div>
+
+    <div class="sb-sec">
+      <div class="sb-label">Current Move</div>
+      <div class="score-grid">
+        <span class="sc-key">Type</span>
+        <span class="regime-pill" id="regime-pill" style="background:rgba(138,147,163,.12);color:var(--muted)">—</span>
+        <span class="sc-key">System Δ</span>
+        <span class="sc-val" id="sys-delta" style="color:var(--muted)">—</span>
+        <span class="sc-key">Benefiting</span>
+        <span class="sc-val" id="winners" style="color:var(--cgreen)">—</span>
+        <span class="sc-key">Hurt</span>
+        <span class="sc-val" id="losers" style="color:var(--cred)">—</span>
+      </div>
+    </div>
+
+    <div class="sb-sec">
+      <div class="sb-label">Key</div>
+      <div class="legend">
+        <div class="leg-row"><div class="leg-sw" style="background:var(--cgreen)"></div>Benefits everyone</div>
+        <div class="leg-row"><div class="leg-sw" style="background:var(--cblue)"></div>Net positive, some lose</div>
+        <div class="leg-row"><div class="leg-sw" style="background:var(--cpurp)"></div>Redistributes benefit</div>
+        <div class="leg-row"><div class="leg-sw" style="background:var(--cred)"></div>Reduces the whole</div>
+      </div>
+    </div>
+
+    <div class="sb-sec">
+      <div class="sb-label">How to use</div>
+      <p class="hint" id="mode-hint">Hover to preview the move regime. Click to reposition the decision point. Drag the square to explore.</p>
+    </div>
+
+    <div class="sb-sec">
+      <button class="reset-btn" id="reset-btn">Reset Position</button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── Palette ──────────────────────────────────────────────────────────────────
+const C = { green:'#2cdc8c', blue:'#5b9cf6', purple:'#a855f7', red:'#f87171', neutral:'#8a93a3' };
+
+// rgba prefix for each regime (append alpha + ')')
+const RGBA = {
+  green:  'rgba(44,220,140,',
+  blue:   'rgba(91,156,246,',
+  purple: 'rgba(168,85,247,',
+  red:    'rgba(248,113,113,',
+  neutral:'rgba(138,147,163,',
+};
+
+const REGIME_NAME = { green:'Pareto', blue:'Net +', purple:'Shift', red:'Loss' };
+const REGIME_INDEX = { neutral:0, green:1, blue:2, purple:3, red:4 };
+const INDEX_REGIME = [null,'green','blue','purple','red'];
+
+// ── Canvas ───────────────────────────────────────────────────────────────────
+const canvas = document.getElementById('canvas');
+const ctx    = canvas.getContext('2d');
+let W = 0, H = 0;
+
+function resizeCanvas() {
+  const area = canvas.parentElement;
+  W = canvas.width  = area.clientWidth;
+  H = canvas.height = area.clientHeight;
+}
+
+// ── State ────────────────────────────────────────────────────────────────────
+const st = {
+  mode:    'manual',
+  shape:   'linear',
+  dec:     { x:0, y:0 },    // decision point (square)
+  actors:  [],               // [{x,y}]
+  mouse:   null,
+  dragging:false,
+  dragOff: { x:0, y:0 },
+  traces:  [],               // auto-mode: [{from,to,regime}]
+  hm:      null,             // heatmap cache {step,cols,rows,data:Uint8Array}
+};
+
+// ── Shape definitions ────────────────────────────────────────────────────────
+function buildActors(shape, cx, cy) {
+  const r = Math.min(W, H) * 0.30;
+  switch (shape) {
+    case 'linear':
+      return [
+        { x:cx,         y:cy - r*0.38 },
+        { x:cx,         y:cy - r*0.65 },
+        { x:cx,         y:cy - r*0.90 },
+        { x:cx,         y:cy - r*1.15 },
+      ];
+    case 'split':
+      return [
+        { x:cx - r*0.80, y:cy - r*0.15 },
+        { x:cx - r*0.52, y:cy + r*0.28 },
+        { x:cx + r*0.80, y:cy + r*0.15 },
+        { x:cx + r*0.52, y:cy - r*0.28 },
+      ];
+    case 'surrounding':
+      return Array.from({ length:6 }, (_, i) => {
+        const a = (i/6)*Math.PI*2 - Math.PI/2;
+        return { x: cx + r*0.72*Math.cos(a), y: cy + r*0.72*Math.sin(a) };
+      });
+    case 'clustered':
+      return [
+        { x:cx - r*0.15, y:cy - r*0.65 },
+        { x:cx + r*0.20, y:cy - r*0.55 },
+        { x:cx + r*0.05, y:cy - r*0.85 },
+        { x:cx + r*1.05, y:cy + r*0.58 },  // outlier
+      ];
+    case 'diagonal':
+      return [
+        { x:cx - r*0.78, y:cy - r*0.62 },
+        { x:cx + r*0.72, y:cy - r*0.52 },
+        { x:cx - r*0.48, y:cy + r*0.72 },
+        { x:cx + r*0.78, y:cy + r*0.58 },
+        { x:cx + r*0.08, y:cy - r*0.98 },
+      ];
+  }
+  return [];
+}
+
+// ── Regime math ──────────────────────────────────────────────────────────────
+function classify(from, to, actors) {
+  if (!actors.length) return { regime:'neutral', total:0, deltas:[] };
+  const len = Math.hypot(to.x-from.x, to.y-from.y);
+  if (len < 0.5) return { regime:'neutral', total:0, deltas:[] };
+
+  const deltas = actors.map(a => {
+    const od = Math.hypot(a.x-from.x, a.y-from.y);
+    const nd = Math.hypot(a.x-to.x,   a.y-to.y);
+    return (od - nd) / len;  // normalized cosine-like value in [-1,1]
+  });
+
+  const n     = actors.length;
+  const total = deltas.reduce((s,d) => s+d, 0) / n;
+  const eps   = 0.06;
+  const hasLosers  = deltas.some(d => d < -eps);
+  const hasWinners = deltas.some(d => d >  eps);
+
+  let regime;
+  if      (!hasLosers)              regime = 'green';
+  else if (total < -eps)            regime = 'red';
+  else if (Math.abs(total) <= eps)  regime = 'purple';
+  else                              regime = 'blue';
+
+  return { regime, total, deltas };
+}
+
+// ── Heatmap ──────────────────────────────────────────────────────────────────
+function buildHeatmap() {
+  const step = 8;
+  const cols = Math.ceil(W / step);
+  const rows = Math.ceil(H / step);
+  const data = new Uint8Array(rows * cols);
+  for (let gy = 0; gy < rows; gy++) {
+    for (let gx = 0; gx < cols; gx++) {
+      const px = (gx + 0.5) * step;
+      const py = (gy + 0.5) * step;
+      const { regime } = classify(st.dec, { x:px, y:py }, st.actors);
+      data[gy*cols + gx] = REGIME_INDEX[regime] || 0;
+    }
+  }
+  st.hm = { step, cols, rows, data };
+}
+
+function drawHeatmap(alpha) {
+  if (!st.hm) return;
+  const { step, cols, rows, data } = st.hm;
+  for (let idx = 0; idx < data.length; idx++) {
+    const ri = data[idx];
+    if (!ri) continue;
+    const gy = Math.floor(idx / cols);
+    const gx = idx % cols;
+    ctx.fillStyle = RGBA[INDEX_REGIME[ri]] + alpha + ')';
+    ctx.fillRect(gx*step, gy*step, step, step);
+  }
+}
+
+// ── Auto traces ──────────────────────────────────────────────────────────────
+function buildTraces() {
+  st.traces = st.actors.flatMap(target => {
+    const dx = target.x - st.dec.x;
+    const dy = target.y - st.dec.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 2) return [];
+    const stepPx = 5;
+    const steps  = Math.ceil(dist / stepPx);
+    const segs   = [];
+    for (let i = 0; i < steps; i++) {
+      const t0  = i / steps;
+      const t1  = (i+1) / steps;
+      const from = { x: st.dec.x + dx*t0, y: st.dec.y + dy*t0 };
+      const to   = { x: st.dec.x + dx*t1, y: st.dec.y + dy*t1 };
+      const { regime } = classify(from, to, st.actors);
+      segs.push({ from, to, regime });
+    }
+    return segs;
+  });
+}
+
+// ── Drawing helpers ───────────────────────────────────────────────────────────
+function drawGrid() {
+  const g = 40;
+  ctx.strokeStyle = '#171c25';
+  ctx.lineWidth   = 1;
+  for (let x = 0; x < W; x += g) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  for (let y = 0; y < H; y += g) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+}
+
+function drawActors(hoverDeltas) {
+  const eps = 0.06;
+  st.actors.forEach((a, i) => {
+    const d      = hoverDeltas ? hoverDeltas[i] : null;
+    const key    = d === null ? null : d > eps ? 'green' : d < -eps ? 'red' : null;
+    const stroke = key ? C[key] : '#4a5568';
+
+    if (key) {
+      ctx.beginPath();
+      ctx.arc(a.x, a.y, 15, 0, Math.PI*2);
+      ctx.fillStyle = RGBA[key] + '0.16)';
+      ctx.fill();
+    }
+
+    ctx.beginPath();
+    ctx.arc(a.x, a.y, 8, 0, Math.PI*2);
+    ctx.fillStyle  = '#1c2130';
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth  = 2;
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(a.x, a.y, 3, 0, Math.PI*2);
+    ctx.fillStyle = key ? C[key] : '#8a93a3';
+    ctx.fill();
+  });
+}
+
+function drawSquare(regime) {
+  const { x, y } = st.dec;
+  const s = 16;
+  const col = (regime && regime !== 'neutral') ? C[regime] : '#6b7690';
+
+  if (regime && regime !== 'neutral') {
+    ctx.shadowColor = C[regime];
+    ctx.shadowBlur  = 16;
+  }
+  ctx.fillStyle   = '#d8e0f0';
+  ctx.strokeStyle = col;
+  ctx.lineWidth   = 2.5;
+  ctx.beginPath();
+  ctx.rect(x-s, y-s, s*2, s*2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+
+// ── Render modes ─────────────────────────────────────────────────────────────
+function renderManual() {
+  if (!st.mouse) {
+    updateUI(null, 0, []);
+    drawActors(null);
+    drawSquare(null);
+    return;
+  }
+
+  const { regime, total, deltas } = classify(st.dec, st.mouse, st.actors);
+  const col = (regime !== 'neutral') ? C[regime] : C.neutral;
+
+  // dashed line from square to mouse
+  ctx.beginPath();
+  ctx.moveTo(st.dec.x, st.dec.y);
+  ctx.lineTo(st.mouse.x, st.mouse.y);
+  ctx.strokeStyle = col + '55';
+  ctx.lineWidth   = 1.5;
+  ctx.setLineDash([5,5]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // target circle
+  ctx.beginPath();
+  ctx.arc(st.mouse.x, st.mouse.y, 10, 0, Math.PI*2);
+  ctx.fillStyle = regime !== 'neutral' ? RGBA[regime]+'0.22)' : 'rgba(138,147,163,0.12)';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(st.mouse.x, st.mouse.y, 4.5, 0, Math.PI*2);
+  ctx.fillStyle = col;
+  ctx.fill();
+
+  drawActors(deltas);
+  drawSquare(regime);
+  updateUI(regime, total, deltas);
+}
+
+function renderAuto() {
+  ctx.lineCap = 'round';
+  st.traces.forEach(seg => {
+    ctx.beginPath();
+    ctx.moveTo(seg.from.x, seg.from.y);
+    ctx.lineTo(seg.to.x,   seg.to.y);
+    ctx.strokeStyle = C[seg.regime] || C.neutral;
+    ctx.lineWidth   = 3.5;
+    ctx.stroke();
+  });
+  ctx.lineCap = 'butt';
+
+  drawActors(null);
+  drawSquare(null);
+  updateUI(null, 0, []);
+}
+
+function render() {
+  ctx.clearRect(0, 0, W, H);
+  drawGrid();
+  drawHeatmap(st.mode === 'auto' ? '0.22' : '0.10');
+  if (st.mode === 'auto') renderAuto();
+  else                    renderManual();
+}
+
+// ── Sidebar UI ───────────────────────────────────────────────────────────────
+function updateUI(regime, total, deltas) {
+  const pill  = document.getElementById('regime-pill');
+  const sdEl  = document.getElementById('sys-delta');
+  const winEl = document.getElementById('winners');
+  const losEl = document.getElementById('losers');
+  const eps   = 0.06;
+
+  if (!regime || regime === 'neutral') {
+    pill.textContent = '—';
+    pill.style.cssText = 'background:rgba(138,147,163,.12);color:var(--muted)';
+    sdEl.textContent  = '—'; sdEl.style.color  = 'var(--muted)';
+    winEl.textContent = '—';
+    losEl.textContent = '—';
+    return;
+  }
+
+  pill.textContent = REGIME_NAME[regime] || regime;
+  pill.style.background = RGBA[regime] + '0.18)';
+  pill.style.color      = C[regime];
+
+  sdEl.textContent = (total >= 0 ? '+' : '') + (total*100).toFixed(0) + '%';
+  sdEl.style.color = total > eps ? 'var(--cgreen)' : total < -eps ? 'var(--cred)' : 'var(--muted)';
+
+  const w = deltas.filter(d => d >  eps).length;
+  const l = deltas.filter(d => d < -eps).length;
+  winEl.textContent = w + ' / ' + deltas.length;
+  losEl.textContent = l + ' / ' + deltas.length;
+}
+
+// ── Interaction ───────────────────────────────────────────────────────────────
+function onSquare(pos) {
+  return Math.abs(pos.x - st.dec.x) <= 20 && Math.abs(pos.y - st.dec.y) <= 20;
+}
+
+canvas.addEventListener('mousemove', e => {
+  const r   = canvas.getBoundingClientRect();
+  const pos = { x: e.clientX - r.left, y: e.clientY - r.top };
+  st.mouse  = pos;
+
+  if (st.dragging) {
+    st.dec = { x: pos.x - st.dragOff.x, y: pos.y - st.dragOff.y };
+    buildHeatmap();
+    if (st.mode === 'auto') buildTraces();
+    canvas.style.cursor = 'grabbing';
+  } else {
+    canvas.style.cursor = onSquare(pos) ? 'grab' : 'crosshair';
+  }
+  render();
+});
+
+canvas.addEventListener('mousedown', e => {
+  const r   = canvas.getBoundingClientRect();
+  const pos = { x: e.clientX - r.left, y: e.clientY - r.top };
+  if (onSquare(pos)) {
+    st.dragging = true;
+    st.dragOff  = { x: pos.x - st.dec.x, y: pos.y - st.dec.y };
+    canvas.style.cursor = 'grabbing';
+  } else if (st.mode === 'manual') {
+    st.dec = { ...pos };
+    buildHeatmap();
+    render();
+  }
+});
+
+window.addEventListener('mouseup', () => {
+  if (!st.dragging) return;
+  st.dragging = false;
+  canvas.style.cursor = 'crosshair';
+  if (st.mode === 'auto') buildTraces();
+  render();
+});
+
+canvas.addEventListener('mouseleave', () => {
+  st.mouse    = null;
+  st.dragging = false;
+  render();
+});
+
+// Mode buttons
+document.querySelectorAll('.mode-btn').forEach(btn =>
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    st.mode = btn.dataset.mode;
+    document.getElementById('mode-hint').textContent =
+      st.mode === 'manual'
+        ? 'Hover to preview the move regime. Click to reposition the decision point. Drag the square to explore.'
+        : 'Paths show every possible decision toward each actor, colored by regime at each step. Drag the square to shift the starting position.';
+    if (st.mode === 'auto') buildTraces();
+    render();
+  })
+);
+
+// Shape buttons
+document.querySelectorAll('.shape-btn').forEach(btn =>
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.shape-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    st.shape  = btn.dataset.shape;
+    st.actors = buildActors(st.shape, st.dec.x, st.dec.y);
+    buildHeatmap();
+    if (st.mode === 'auto') buildTraces();
+    render();
+  })
+);
+
+// Reset
+document.getElementById('reset-btn').addEventListener('click', () => {
+  st.dec    = { x: W/2, y: H/2 };
+  st.actors = buildActors(st.shape, W/2, H/2);
+  buildHeatmap();
+  if (st.mode === 'auto') buildTraces();
+  render();
+});
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  resizeCanvas();
+  st.dec    = { x: W/2, y: H/2 };
+  st.actors = buildActors(st.shape, W/2, H/2);
+  buildHeatmap();
+  if (st.mode === 'auto') buildTraces();
+  render();
+});
+
+resizeCanvas();
+st.dec    = { x: W/2, y: H/2 };
+st.actors = buildActors(st.shape, W/2, H/2);
+buildHeatmap();
+render();
+</script>
+</body>
+</html>
