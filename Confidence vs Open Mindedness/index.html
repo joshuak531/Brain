@@ -117,6 +117,24 @@
     </div>
 
     <div class="group">
+      <h3>Open-minded Agent — Analysis Accuracy</h3>
+      <div class="presets" id="accPresets">
+        <button data-val="0.25">25%</button>
+        <button data-val="0.5">50%</button>
+        <button data-val="0.75">75%</button>
+        <button data-val="0.95">95%</button>
+        <button data-val="1" class="active">100%</button>
+      </div>
+      <div class="text-input">
+        <span>Custom %:</span>
+        <input type="number" id="accInput" min="1" max="100" value="100">
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px">
+        100% = always picks closest · lower = cascade, biased toward worst
+      </div>
+    </div>
+
+    <div class="group">
       <div class="group-header">
         <h3>Start-to-Goal Distance</h3>
         <button id="randomAngle" class="icon-btn" title="Randomize goal direction">↻</button>
@@ -145,6 +163,16 @@
       <div class="text-input">
         <span>Custom:</span>
         <input type="number" id="popInput" min="1" max="99999" value="200">
+      </div>
+      <div style="margin-top:10px;">
+        <div style="font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">Distribution</div>
+        <div class="presets" id="distModePresets">
+          <button data-val="random" class="active">Random</button>
+          <button data-val="even">Even</button>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">
+          Even = agents spread uniformly across all 360° (random phase each run)
+        </div>
       </div>
     </div>
 
@@ -179,7 +207,7 @@
   let winner = null;
   let goalAngle = 0; // radians; 0 = due east (right)
 
-  const params = { omPerms: 4, goalDistance: 3000, pop: 200 };
+  const params = { omPerms: 4, goalDistance: 3000, pop: 200, distribution: 'random', omAccuracy: 1 };
 
   // ── goal position ─────────────────────────────────────────────────────────
 
@@ -256,6 +284,23 @@
   wirePresets('permPresets', null, 'omPerms', reset);
   wirePresets('distPresets', 'goalDistanceInput', 'goalDistance', () => { computeViewport(); reset(); });
   wirePresets('popPresets',  'popInput',          'pop',          reset);
+  wirePresets('accPresets',  null,                'omAccuracy',   reset);
+
+  document.getElementById('accInput').addEventListener('change', () => {
+    const v = Math.max(1, Math.min(100, +document.getElementById('accInput').value || 100));
+    document.getElementById('accInput').value = v;
+    params.omAccuracy = v / 100;
+    markActive(document.getElementById('accPresets'), String(v / 100));
+    reset();
+  });
+
+  document.getElementById('distModePresets').querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      params.distribution = btn.dataset.val;
+      markActive(document.getElementById('distModePresets'), btn.dataset.val);
+      reset();
+    });
+  });
 
   document.getElementById('randomAngle').addEventListener('click', () => {
     goalAngle = Math.random() * Math.PI * 2;
@@ -308,6 +353,16 @@
   const CARDINALS = [-Math.PI / 2, 0, Math.PI / 2, Math.PI];
   const ALL_8 = [-Math.PI/2, -Math.PI/4, 0, Math.PI/4, Math.PI/2, 3*Math.PI/4, Math.PI, -3*Math.PI/4];
 
+  function pickBestByAccuracy(candidates, gx, gy) {
+    const sorted = candidates
+      .map((c, i) => ({ i, d: dist(c.x, c.y, gx, gy) }))
+      .sort((a, b) => a.d - b.d);
+    for (let k = 0; k < sorted.length - 1; k++) {
+      if (Math.random() < params.omAccuracy) return sorted[k].i;
+    }
+    return sorted[sorted.length - 1].i;
+  }
+
   function candidateAngles(count) {
     if (count === 2) {
       const a = [...CARDINALS];
@@ -350,9 +405,13 @@
 
     const swarm = params.pop > 1;
     agents.push(makeAgent('om', 'rgba(44,220,140,1)', { permutations: params.omPerms }));
+    const phaseOffset = Math.random() * Math.PI * 2;
     for (let i = 0; i < params.pop; i++) {
+      const heading = params.distribution === 'even'
+        ? phaseOffset + (i / params.pop) * Math.PI * 2
+        : Math.random() * Math.PI * 2;
       agents.push(makeAgent('conf', swarm ? 'rgba(255,122,89,0.45)' : 'rgba(255,122,89,1)', {
-        heading: Math.random() * Math.PI * 2,
+        heading,
         simplePath: swarm,
       }));
     }
@@ -369,14 +428,11 @@
     const center = { x: a.x, y: a.y };
     const { x: gx, y: gy } = goalPos();
     const candidates = [];
-    let bestIdx = 0, bestD = Infinity;
 
     for (const ang of candidateAngles(a.permutations)) {
-      const ep = { x: center.x + Math.cos(ang) * WORLD_STEP, y: center.y + Math.sin(ang) * WORLD_STEP };
-      const d = dist(ep.x, ep.y, gx, gy);
-      candidates.push(ep);
-      if (d < bestD) { bestD = d; bestIdx = candidates.length - 1; }
+      candidates.push({ x: center.x + Math.cos(ang) * WORLD_STEP, y: center.y + Math.sin(ang) * WORLD_STEP });
     }
+    const bestIdx = pickBestByAccuracy(candidates, gx, gy);
 
     const wp = [{ x: center.x, y: center.y }];
     for (let i = 0; i < candidates.length; i++) {
@@ -492,7 +548,8 @@
     }
 
     if (om) {
-      lines.push(`<div class="row"><span class="k">Open-minded</span><span class="v">${om.permutations} perms/move · ${om.moves} moves · ${fmt(om.finishedAt || 0)}</span></div>`);
+      const accLabel = params.omAccuracy < 1 ? ` · ${(params.omAccuracy * 100).toFixed(0)}% acc` : '';
+      lines.push(`<div class="row"><span class="k">Open-minded</span><span class="v">${om.permutations} perms/move${accLabel} · ${om.moves} moves · ${fmt(om.finishedAt || 0)}</span></div>`);
       lines.push(`<div class="row"><span class="k">Testing cost</span><span class="v">${om.previewCount} dirs tested · ${om.travelLegs} legs</span></div>`);
     }
 
@@ -504,7 +561,8 @@
       const fastest = arrived.length ? Math.min(...arrived.map(a => a.finishedAt)) : null;
       const bestMiss = conf.reduce((b, a) => a.closest < b ? a.closest : b, Infinity);
       const est = societyEstimate();
-      lines.push(`<div class="row"><span class="k">Society</span><span class="v">${arrived.length}/${conf.length} arrived · best ${fastest !== null ? fmt(fastest) : '—'}</span></div>`);
+      const distLabel = params.distribution === 'even' ? ' · even dist.' : '';
+      lines.push(`<div class="row"><span class="k">Society</span><span class="v">${arrived.length}/${conf.length} arrived${distLabel} · best ${fastest !== null ? fmt(fastest) : '—'}</span></div>`);
       lines.push(`<div class="row"><span class="k">Best miss</span><span class="v">${bestMiss.toFixed(0)} world units</span></div>`);
       lines.push(`<div class="row"><span class="k">Hit cone</span><span class="v">${est.coneDeg.toFixed(2)}° of 360°</span></div>`);
       lines.push(`<div class="row"><span class="k">Need for 50% / 90%</span><span class="v">~${est.n50} / ~${est.n90} agents</span></div>`);
