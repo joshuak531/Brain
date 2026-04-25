@@ -177,6 +177,7 @@
     </div>
 
     <div class="actions">
+      <button id="runRecord" style="flex:2">Run & Record</button>
       <button id="run">Run</button>
       <button id="reset" class="secondary">Reset</button>
     </div>
@@ -205,7 +206,9 @@
   let rafId = null;
   let tStart = 0;
   let winner = null;
-  let goalAngle = 0; // radians; 0 = due east (right)
+  let goalAngle = 0;
+  let mediaRecorder = null;
+  let recordedChunks = [];
 
   const params = { omPerms: 4, goalDistance: 3000, pop: 200, distribution: 'random', omAccuracy: 1 };
 
@@ -319,10 +322,21 @@
     tStart = performance.now();
     loop();
   });
+  document.getElementById('runRecord').addEventListener('click', () => {
+    if (running) return;
+    computeViewport();
+    setupAgents();
+    running = true;
+    winner = null;
+    tStart = performance.now();
+    startRecording();
+    loop();
+  });
   document.getElementById('reset').addEventListener('click', reset);
 
   function reset() {
     if (rafId) cancelAnimationFrame(rafId);
+    stopRecording();
     running = false; agents = []; winner = null;
     computeViewport();
     setStatus('Press Run. Green tests multiple directions before each move. Orange picks one random heading and goes straight.');
@@ -346,6 +360,31 @@
 
   function withinBounds(wx, wy) {
     return dist(wx, wy, 0, 0) <= params.goalDistance * 1.8;
+  }
+
+  function startRecording() {
+    recordedChunks = [];
+    const mimeType = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm']
+      .find(t => MediaRecorder.isTypeSupported(t)) || 'video/webm';
+    const stream = cvs.captureStream(30);
+    mediaRecorder = new MediaRecorder(stream, { mimeType });
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+    mediaRecorder.onstop = () => {
+      const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+      const blob = new Blob(recordedChunks, { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `simulation.${ext}`;
+      a.click();
+      URL.revokeObjectURL(url);
+      mediaRecorder = null;
+    };
+    mediaRecorder.start();
+  }
+
+  function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
   }
 
   // ── candidate angles ──────────────────────────────────────────────────────
@@ -518,7 +557,7 @@
 
     draw();
     if (!allDone) rafId = requestAnimationFrame(loop);
-    else { running = false; updateStatus(true); }
+    else { running = false; updateStatus(true); stopRecording(); }
   }
 
   // ── statistics ────────────────────────────────────────────────────────────
