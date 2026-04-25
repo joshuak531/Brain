@@ -663,6 +663,16 @@
     else planConfStep(a);
   }
 
+  function legDuration(from, to) {
+    return dist(from.x, from.y, to.x, to.y) / WORLD_STEP * legTime;
+  }
+
+  function buildCumTimes(wp) {
+    const ct = [0];
+    for (let i = 0; i < wp.length - 1; i++) ct.push(ct[i] + legDuration(wp[i], wp[i + 1]));
+    return ct;
+  }
+
   function planOMStep(a) {
     const center = { x: a.x, y: a.y };
     const { x: gx, y: gy } = goalPos();
@@ -688,21 +698,23 @@
       if (!(i === bestIdx && i === candidates.length - 1)) wp.push({ x: center.x, y: center.y });
     }
     if (bestIdx !== candidates.length - 1) wp.push(bestFull);
-    else wp[wp.length - 1] = bestFull; // replace scaled with full for the commit
+    else wp[wp.length - 1] = bestFull;
 
     a.moves++;
     a.previewCount += a.permutations;
     a.travelLegs += wp.length - 1;
     a.recordedLegs = 0;
-    a.action = { type: 'om', start: performance.now(), center, candidates, bestIdx, waypoints: wp };
+    const cumTimes = buildCumTimes(wp);
+    a.action = { type: 'om', start: performance.now(), center, candidates, bestIdx, waypoints: wp, cumTimes };
   }
 
   function planConfStep(a) {
     a.moves++;
     a.travelLegs++;
     const next = { x: a.x + Math.cos(a.heading) * WORLD_STEP, y: a.y + Math.sin(a.heading) * WORLD_STEP };
+    const wp = [{ x: a.x, y: a.y }, next];
     a.recordedLegs = 0;
-    a.action = { type: 'conf', start: performance.now(), waypoints: [{ x: a.x, y: a.y }, next] };
+    a.action = { type: 'conf', start: performance.now(), waypoints: wp, cumTimes: [0, legTime] };
   }
 
   function finishAgent(a, now) {
@@ -723,9 +735,14 @@
   function advanceAction(a, now) {
     const act = a.action;
     const total = act.waypoints.length - 1;
-    const elapsed = Math.min(total * legTime, now - act.start);
-    const done = elapsed >= total * legTime;
-    const completedLegs = done ? total : Math.floor(elapsed / legTime);
+    const totalTime = act.cumTimes[total];
+    const elapsed = Math.min(totalTime, now - act.start);
+    const done = elapsed >= totalTime;
+
+    // Find current leg index
+    let li = 0;
+    while (li < total - 1 && act.cumTimes[li + 1] <= elapsed) li++;
+    const completedLegs = done ? total : li;
 
     if (!a.simplePath) {
       while (a.recordedLegs < completedLegs) {
@@ -736,8 +753,8 @@
 
     if (done) { a.x = act.waypoints[total].x; a.y = act.waypoints[total].y; return true; }
 
-    const li = Math.floor(elapsed / legTime);
-    const t = (elapsed - li * legTime) / legTime;
+    const legStart = act.cumTimes[li], legEnd = act.cumTimes[li + 1];
+    const t = legEnd > legStart ? (elapsed - legStart) / (legEnd - legStart) : 1;
     const from = act.waypoints[li], to = act.waypoints[li + 1];
     a.x = from.x + (to.x - from.x) * t;
     a.y = from.y + (to.y - from.y) * t;
