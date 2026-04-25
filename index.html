@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Okkem — Experiments</title>
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #161a21;
+    --line: #232936;
+    --text: #e6e6e6;
+    --muted: #8a93a3;
+    --accent: #2c5cdc;
+    --green: #2cdc8c;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    font: 14px/1.5 -apple-system, system-ui, Segoe UI, Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--text);
+  }
+
+  header {
+    padding: 40px 48px 32px;
+    border-bottom: 1px solid var(--line);
+  }
+  .site-label {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 10px;
+  }
+  header h1 {
+    margin: 0 0 10px; font-size: 28px; font-weight: 700; letter-spacing: -0.02em;
+  }
+  header p {
+    margin: 0; color: var(--muted); font-size: 14px;
+    max-width: 560px; line-height: 1.6;
+  }
+
+  main { padding: 36px 48px 60px; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    gap: 20px;
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: border-color 0.15s, transform 0.15s;
+  }
+  .card:hover { border-color: #3d4f72; transform: translateY(-2px); }
+
+  .card-preview {
+    aspect-ratio: 16 / 9;
+    background: var(--bg);
+    overflow: hidden;
+    position: relative;
+  }
+  .card-preview video {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+  }
+  .card-preview .placeholder {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: #2a3040; font-size: 48px; user-select: none;
+  }
+
+  .card-body {
+    padding: 20px 22px 22px;
+    display: flex; flex-direction: column; flex: 1;
+  }
+  .card-tag {
+    font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--green); margin-bottom: 9px;
+  }
+  .card h2 {
+    margin: 0 0 10px; font-size: 16px; font-weight: 600; line-height: 1.3;
+  }
+  .card p {
+    margin: 0 0 20px; font-size: 13px; color: var(--muted);
+    line-height: 1.65; flex: 1;
+  }
+  .card a.launch {
+    align-self: flex-start;
+    padding: 8px 18px;
+    background: var(--accent); color: white;
+    text-decoration: none; border-radius: 5px;
+    font-size: 13px; font-weight: 600;
+    transition: opacity 0.1s;
+  }
+  .card a.launch:hover { opacity: 0.85; }
+
+  @media (max-width: 600px) {
+    header { padding: 28px 20px 24px; }
+    main { padding: 24px 20px 48px; }
+    .grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="site-label">Okkem</div>
+  <h1>Experiments</h1>
+  <p>Interactive models exploring how systems think, compete, and behave — run in the browser, no setup required.</p>
+</header>
+
+<main>
+  <div class="grid">
+
+    <div class="card">
+      <div class="card-preview">
+        <div class="placeholder">⬡</div>
+        <video src="Confidence vs Open Mindedness/preview.mp4" autoplay muted loop playsinline></video>
+      </div>
+      <div class="card-body">
+        <div class="card-tag">Decision-making · Agent simulation</div>
+        <h2>Confidence vs Open-Mindedness</h2>
+        <p>One methodical agent tests candidate directions before each move; a crowd of confident agents each picks a random heading and commits. Tweak society size, goal distance, and analysis accuracy to find where the crowd wins.</p>
+        <a href="Confidence vs Open Mindedness/index.html" class="launch">Launch →</a>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+</body>
+</html>
