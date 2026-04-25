@@ -34,11 +34,10 @@
     border-radius: 6px; width: 100%; height: 100%; display: block;
   }
   .legend {
-    display: flex; gap: 16px; align-items: center;
+    display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
     padding: 10px 4px 0; font-size: 12px; color: var(--muted);
   }
   .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
-  .om { background: var(--om); }
   .conf { background: var(--conf); }
 
   aside { border-left: 1px solid var(--line); padding: 14px 16px; overflow-y: auto; background: #11151c; }
@@ -86,6 +85,49 @@
   #status .row { display: flex; justify-content: space-between; gap: 8px; }
   #status .row .k { color: var(--muted); }
   #status .row .v { font-variant-numeric: tabular-nums; }
+
+  /* Agent list */
+  .agent-list { display: flex; flex-direction: column; gap: 4px; }
+  .agent-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 4px; cursor: pointer; transition: border-color 0.1s;
+  }
+  .agent-row:hover { border-color: var(--muted); }
+  .agent-color-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .agent-row-label { flex: 1; font-size: 12px; color: var(--text); }
+  .agent-remove {
+    padding: 1px 5px; background: transparent; color: var(--muted);
+    border: none; border-radius: 3px; cursor: pointer; font-size: 13px; line-height: 1;
+    transition: color 0.1s;
+  }
+  .agent-remove:hover { color: #ff5c5c; }
+  .agent-list-empty { font-size: 12px; color: var(--muted); padding: 2px 0; }
+
+  /* Modal */
+  #modalOverlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.65); z-index: 100;
+    align-items: center; justify-content: center;
+  }
+  #modalOverlay.open { display: flex; }
+  #modalBox {
+    background: #11151c; border: 1px solid var(--line);
+    border-radius: 8px; padding: 20px; width: 320px; max-width: 95vw;
+  }
+  #modalBox h2 { margin: 0 0 14px; font-size: 14px; font-weight: 600; }
+  .modal-label {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--muted); margin: 12px 0 6px;
+  }
+  .modal-hint { font-size: 11px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
+  .modal-actions { display: flex; gap: 8px; margin-top: 20px; }
+  .modal-actions button {
+    flex: 1; padding: 8px; border-radius: 5px; cursor: pointer;
+    font: inherit; font-size: 13px;
+  }
+  #modalCancel { background: var(--panel); color: #cdd3dd; border: 1px solid var(--line); font-weight: 500; }
+  #modalAccept { background: var(--accent); color: white; border: none; font-weight: 600; }
 </style>
 </head>
 <body>
@@ -98,40 +140,17 @@
 <main>
   <div id="stage">
     <canvas id="c"></canvas>
-    <div class="legend">
-      <span><span class="swatch om"></span>Open-minded</span>
+    <div class="legend" id="legend">
       <span><span class="swatch conf"></span>Confident</span>
     </div>
   </div>
   <aside>
     <div class="group">
-      <h3>Open-minded Agent — Permutations</h3>
-      <div class="presets" id="permPresets">
-        <button data-val="2">2</button>
-        <button data-val="4" class="active">4</button>
-        <button data-val="8">8</button>
+      <div class="group-header">
+        <h3>Open-minded Agents</h3>
+        <button id="addAgentBtn" class="icon-btn">+ Add</button>
       </div>
-      <div style="font-size:11px;color:var(--muted);margin-top:2px">
-        2 = random pair from ↑↓←→ &nbsp;·&nbsp; 4 = all cardinals &nbsp;·&nbsp; 8 = all compass
-      </div>
-    </div>
-
-    <div class="group">
-      <h3>Open-minded Agent — Analysis Accuracy</h3>
-      <div class="presets" id="accPresets">
-        <button data-val="0.25">25%</button>
-        <button data-val="0.5">50%</button>
-        <button data-val="0.75">75%</button>
-        <button data-val="0.95">95%</button>
-        <button data-val="1" class="active">100%</button>
-      </div>
-      <div class="text-input">
-        <span>Custom %:</span>
-        <input type="number" id="accInput" min="1" max="100" value="100">
-      </div>
-      <div style="font-size:11px;color:var(--muted);margin-top:2px">
-        100% = always picks closest · lower = cascade, biased toward worst
-      </div>
+      <div class="agent-list" id="agentList"></div>
     </div>
 
     <div class="group">
@@ -186,6 +205,40 @@
   </aside>
 </main>
 
+<!-- Agent config modal -->
+<div id="modalOverlay">
+  <div id="modalBox">
+    <h2 id="modalTitle">Add Open-minded Agent</h2>
+
+    <div class="modal-label">Permutations</div>
+    <div class="presets" id="modalPermPresets">
+      <button data-val="2">2</button>
+      <button data-val="4" class="active">4</button>
+      <button data-val="8">8</button>
+    </div>
+    <div class="modal-hint">2 = random pair from ↑↓←→ &nbsp;·&nbsp; 4 = all cardinals &nbsp;·&nbsp; 8 = all compass directions</div>
+
+    <div class="modal-label">Analysis Accuracy</div>
+    <div class="presets" id="modalAccPresets">
+      <button data-val="0.25">25%</button>
+      <button data-val="0.5">50%</button>
+      <button data-val="0.75">75%</button>
+      <button data-val="0.95">95%</button>
+      <button data-val="1" class="active">100%</button>
+    </div>
+    <div class="text-input">
+      <span>Custom %:</span>
+      <input type="number" id="modalAccInput" min="1" max="100" value="100">
+    </div>
+    <div class="modal-hint">100% = always picks the closest direction &nbsp;·&nbsp; lower = cascade selection biased toward the worst candidate</div>
+
+    <div class="modal-actions">
+      <button id="modalCancel">Cancel</button>
+      <button id="modalAccept">Add Agent</button>
+    </div>
+  </div>
+</div>
+
 <script>
 (() => {
   const cvs = document.getElementById('c');
@@ -194,6 +247,7 @@
 
   const WORLD_STEP = 50;
   const WORLD_ARRIVAL_R = 50;
+  const OM_COLORS = ['#2cdc8c', '#00cfcf', '#4fa8ff', '#c47aff', '#ffdc5e', '#ff9966'];
 
   let legTime = 120;
   let maxMoves = 1200;
@@ -210,7 +264,14 @@
   let mediaRecorder = null;
   let recordedChunks = [];
 
-  const params = { omPerms: 4, goalDistance: 3000, pop: 200, distribution: 'random', omAccuracy: 1 };
+  let omAgentDefs = [{ permutations: 4, accuracy: 1 }];
+
+  // Modal state
+  let editingIdx = null;
+  let modalPerms = 4;
+  let modalAccuracy = 1;
+
+  const params = { goalDistance: 3000, pop: 200, distribution: 'random' };
 
   // ── goal position ─────────────────────────────────────────────────────────
 
@@ -255,6 +316,114 @@
   }
   window.addEventListener('resize', resize);
 
+  // ── agent list UI ─────────────────────────────────────────────────────────
+
+  function omColor(idx) { return OM_COLORS[idx % OM_COLORS.length]; }
+
+  function renderAgentList() {
+    const list = document.getElementById('agentList');
+    list.innerHTML = '';
+    if (omAgentDefs.length === 0) {
+      list.innerHTML = '<div class="agent-list-empty">No open-minded agents — add one above.</div>';
+      return;
+    }
+    omAgentDefs.forEach((def, i) => {
+      const row = document.createElement('div');
+      row.className = 'agent-row';
+      const accLabel = def.accuracy < 1 ? `${(def.accuracy * 100).toFixed(0)}% acc` : '100% acc';
+      row.innerHTML = `
+        <span class="agent-color-dot" style="background:${omColor(i)}"></span>
+        <span class="agent-row-label">${def.permutations} perms · ${accLabel}</span>
+        <button class="agent-remove" title="Remove">✕</button>
+      `;
+      row.querySelector('.agent-remove').addEventListener('click', e => {
+        e.stopPropagation();
+        omAgentDefs.splice(i, 1);
+        renderAgentList();
+        renderLegend();
+        reset();
+      });
+      row.addEventListener('click', () => openModal(i));
+      list.appendChild(row);
+    });
+  }
+
+  function renderLegend() {
+    const legend = document.getElementById('legend');
+    const parts = omAgentDefs.map((def, i) => {
+      const label = omAgentDefs.length > 1 ? `OM ${i + 1}` : 'Open-minded';
+      return `<span><span class="swatch" style="background:${omColor(i)}"></span>${label}</span>`;
+    });
+    parts.push('<span><span class="swatch conf"></span>Confident</span>');
+    legend.innerHTML = parts.join('');
+  }
+
+  // ── modal ─────────────────────────────────────────────────────────────────
+
+  function openModal(idx) {
+    editingIdx = (idx !== null && idx !== undefined) ? idx : null;
+    const def = editingIdx !== null ? omAgentDefs[editingIdx] : { permutations: 4, accuracy: 1 };
+    modalPerms = def.permutations;
+    modalAccuracy = def.accuracy;
+
+    document.getElementById('modalTitle').textContent =
+      editingIdx !== null ? 'Edit Open-minded Agent' : 'Add Open-minded Agent';
+    document.getElementById('modalAccept').textContent =
+      editingIdx !== null ? 'Update Agent' : 'Add Agent';
+
+    markActive(document.getElementById('modalPermPresets'), String(modalPerms));
+    markActive(document.getElementById('modalAccPresets'), String(modalAccuracy));
+    document.getElementById('modalAccInput').value = Math.round(modalAccuracy * 100);
+
+    document.getElementById('modalOverlay').classList.add('open');
+  }
+
+  function closeModal() {
+    document.getElementById('modalOverlay').classList.remove('open');
+    editingIdx = null;
+  }
+
+  document.getElementById('addAgentBtn').addEventListener('click', () => openModal(null));
+  document.getElementById('modalCancel').addEventListener('click', closeModal);
+  document.getElementById('modalOverlay').addEventListener('click', e => {
+    if (e.target === document.getElementById('modalOverlay')) closeModal();
+  });
+
+  document.getElementById('modalPermPresets').querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      modalPerms = +btn.dataset.val;
+      markActive(document.getElementById('modalPermPresets'), btn.dataset.val);
+    });
+  });
+
+  document.getElementById('modalAccPresets').querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      modalAccuracy = +btn.dataset.val;
+      document.getElementById('modalAccInput').value = Math.round(modalAccuracy * 100);
+      markActive(document.getElementById('modalAccPresets'), btn.dataset.val);
+    });
+  });
+
+  document.getElementById('modalAccInput').addEventListener('change', () => {
+    const v = Math.max(1, Math.min(100, +document.getElementById('modalAccInput').value || 100));
+    document.getElementById('modalAccInput').value = v;
+    modalAccuracy = v / 100;
+    markActive(document.getElementById('modalAccPresets'), String(v / 100));
+  });
+
+  document.getElementById('modalAccept').addEventListener('click', () => {
+    const def = { permutations: modalPerms, accuracy: modalAccuracy };
+    if (editingIdx !== null) {
+      omAgentDefs[editingIdx] = def;
+    } else {
+      omAgentDefs.push(def);
+    }
+    closeModal();
+    renderAgentList();
+    renderLegend();
+    reset();
+  });
+
   // ── UI: presets + text inputs ─────────────────────────────────────────────
 
   function wirePresets(containerId, inputId, paramKey, onChange) {
@@ -284,18 +453,8 @@
     container.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.val === val));
   }
 
-  wirePresets('permPresets', null, 'omPerms', reset);
   wirePresets('distPresets', 'goalDistanceInput', 'goalDistance', () => { computeViewport(); reset(); });
   wirePresets('popPresets',  'popInput',          'pop',          reset);
-  wirePresets('accPresets',  null,                'omAccuracy',   reset);
-
-  document.getElementById('accInput').addEventListener('change', () => {
-    const v = Math.max(1, Math.min(100, +document.getElementById('accInput').value || 100));
-    document.getElementById('accInput').value = v;
-    params.omAccuracy = v / 100;
-    markActive(document.getElementById('accPresets'), String(v / 100));
-    reset();
-  });
 
   document.getElementById('distModePresets').querySelectorAll('button').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -339,7 +498,7 @@
     stopRecording();
     running = false; agents = []; winner = null;
     computeViewport();
-    setStatus('Press Run. Green tests multiple directions before each move. Orange picks one random heading and goes straight.');
+    setStatus('Press Run. Each open-minded agent tests candidate directions before every move. Confident agents pick one heading and go straight.');
     draw();
   }
 
@@ -392,12 +551,12 @@
   const CARDINALS = [-Math.PI / 2, 0, Math.PI / 2, Math.PI];
   const ALL_8 = [-Math.PI/2, -Math.PI/4, 0, Math.PI/4, Math.PI/2, 3*Math.PI/4, Math.PI, -3*Math.PI/4];
 
-  function pickBestByAccuracy(candidates, gx, gy) {
+  function pickBestByAccuracy(candidates, gx, gy, accuracy) {
     const sorted = candidates
       .map((c, i) => ({ i, d: dist(c.x, c.y, gx, gy) }))
       .sort((a, b) => a.d - b.d);
     for (let k = 0; k < sorted.length - 1; k++) {
-      if (Math.random() < params.omAccuracy) return sorted[k].i;
+      if (Math.random() < accuracy) return sorted[k].i;
     }
     return sorted[sorted.length - 1].i;
   }
@@ -422,6 +581,7 @@
     return {
       kind, color,
       permutations: opts.permutations || 0,
+      accuracy: opts.accuracy ?? 1,
       heading: opts.heading ?? null,
       x: 0, y: 0,
       path: [{ x: 0, y: 0 }],
@@ -439,11 +599,15 @@
 
   function setupAgents() {
     agents = [];
-    legTime = Math.max(8, Math.min(160, Math.round(10000 * WORLD_STEP / (params.goalDistance * params.omPerms))));
+    const minPerms = omAgentDefs.length ? Math.min(...omAgentDefs.map(d => d.permutations)) : 4;
+    legTime = Math.max(8, Math.min(160, Math.round(10000 * WORLD_STEP / (params.goalDistance * minPerms))));
     maxMoves = Math.max(1200, Math.ceil(params.goalDistance / WORLD_STEP) * 3);
 
+    omAgentDefs.forEach((def, i) => {
+      agents.push(makeAgent('om', omColor(i), { permutations: def.permutations, accuracy: def.accuracy }));
+    });
+
     const swarm = params.pop > 1;
-    agents.push(makeAgent('om', 'rgba(44,220,140,1)', { permutations: params.omPerms }));
     const phaseOffset = Math.random() * Math.PI * 2;
     for (let i = 0; i < params.pop; i++) {
       const heading = params.distribution === 'even'
@@ -471,7 +635,7 @@
     for (const ang of candidateAngles(a.permutations)) {
       candidates.push({ x: center.x + Math.cos(ang) * WORLD_STEP, y: center.y + Math.sin(ang) * WORLD_STEP });
     }
-    const bestIdx = pickBestByAccuracy(candidates, gx, gy);
+    const bestIdx = pickBestByAccuracy(candidates, gx, gy, a.accuracy);
 
     const wp = [{ x: center.x, y: center.y }];
     for (let i = 0; i < candidates.length; i++) {
@@ -572,25 +736,37 @@
   }
 
   function updateStatus(final = false) {
-    const om = agents[0];
-    const conf = agents.slice(1);
+    const omAgents = agents.filter(a => a.kind === 'om');
+    const conf = agents.filter(a => a.kind === 'conf');
     const lines = [];
 
     if (winner && winner.finishedAt < Infinity) {
-      const name = winner.kind === 'om' ? 'Open-minded' : (params.pop > 1 ? `Best of ${conf.length} confident` : 'Confident');
-      const col = winner.kind === 'om' ? 'var(--om)' : 'var(--conf)';
+      let name, col;
+      if (winner.kind === 'om') {
+        const idx = omAgents.indexOf(winner);
+        name = omAgents.length > 1 ? `Open-minded ${idx + 1}` : 'Open-minded';
+        col = omColor(omAgentDefs.indexOf(omAgentDefs[idx]));
+      } else {
+        name = params.pop > 1 ? `Best of ${conf.length} confident` : 'Confident';
+        col = 'var(--conf)';
+      }
       lines.push(`<div class="winner" style="color:${col}">${name} reached the goal first</div>`);
     } else if (final) {
       lines.push('<div class="winner">No agent reached the goal this run</div>');
     } else {
-      lines.push(`<div class="winner">${params.pop === 1 ? 'One tester vs one guess' : 'One tester vs a crowd of guesses'}</div>`);
+      const omCount = omAgents.length;
+      const confLabel = params.pop === 1 ? 'one guess' : `${params.pop} guesses`;
+      lines.push(`<div class="winner">${omCount} tester${omCount !== 1 ? 's' : ''} vs ${confLabel}</div>`);
     }
 
-    if (om) {
-      const accLabel = params.omAccuracy < 1 ? ` · ${(params.omAccuracy * 100).toFixed(0)}% acc` : '';
-      lines.push(`<div class="row"><span class="k">Open-minded</span><span class="v">${om.permutations} perms/move${accLabel} · ${om.moves} moves · ${fmt(om.finishedAt || 0)}</span></div>`);
-      lines.push(`<div class="row"><span class="k">Testing cost</span><span class="v">${om.previewCount} dirs tested · ${om.travelLegs} legs</span></div>`);
-    }
+    omAgents.forEach((om, i) => {
+      const label = omAgents.length > 1 ? `OM ${i + 1}` : 'Open-minded';
+      const accLabel = om.accuracy < 1 ? ` · ${(om.accuracy * 100).toFixed(0)}% acc` : '';
+      lines.push(`<div class="row"><span class="k" style="color:${omColor(i)}">${label}</span><span class="v">${om.permutations} perms${accLabel} · ${om.moves} moves · ${fmt(om.finishedAt || 0)}</span></div>`);
+      if (omAgents.length === 1) {
+        lines.push(`<div class="row"><span class="k">Testing cost</span><span class="v">${om.previewCount} dirs tested · ${om.travelLegs} legs</span></div>`);
+      }
+    });
 
     if (params.pop === 1 && conf[0]) {
       lines.push(`<div class="row"><span class="k">Confident</span><span class="v">heading ${headingLabel(conf[0].heading)} · ${fmt(conf[0].finishedAt || 0)}</span></div>`);
@@ -644,10 +820,15 @@
       const isOM = a.kind === 'om';
       const isWinner = a === winner && a.kind === 'conf';
       ctx.lineWidth = isOM ? 2.2 : isWinner ? 1.8 : 1;
-      ctx.strokeStyle = isOM
-        ? 'rgba(44,220,140,0.85)'
-        : isWinner ? 'rgba(255,122,89,0.95)'
-        : params.pop > 1 ? 'rgba(255,122,89,0.2)' : 'rgba(255,122,89,0.7)';
+
+      if (isOM) {
+        ctx.globalAlpha = 0.85;
+        ctx.strokeStyle = a.color;
+      } else {
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = isWinner ? 'rgba(255,122,89,0.95)'
+          : params.pop > 1 ? 'rgba(255,122,89,0.2)' : 'rgba(255,122,89,0.7)';
+      }
 
       ctx.beginPath();
       ctx.moveTo(sx(a.path[0].x), sy(a.path[0].y));
@@ -658,22 +839,32 @@
         ctx.lineTo(sx(a.x), sy(a.y));
       }
       ctx.stroke();
+      ctx.globalAlpha = 1;
     }
 
-    // OM permutation spokes
-    const om = agents[0];
-    if (om?.action?.type === 'om' && !om.finished) {
-      const cx = sx(om.action.center.x), cy = sy(om.action.center.y);
-      for (let i = 0; i < om.action.candidates.length; i++) {
-        const chosen = i === om.action.bestIdx;
-        ctx.strokeStyle = chosen ? 'rgba(44,220,140,0.7)' : 'rgba(180,200,230,0.14)';
-        ctx.lineWidth = chosen ? 1.8 : 1;
-        const px = sx(om.action.candidates[i].x), py = sy(om.action.candidates[i].y);
+    // OM permutation spokes — all OM agents
+    for (const a of agents) {
+      if (a.kind !== 'om' || a.action?.type !== 'om' || a.finished) continue;
+      const cx = sx(a.action.center.x), cy = sy(a.action.center.y);
+      for (let i = 0; i < a.action.candidates.length; i++) {
+        const chosen = i === a.action.bestIdx;
+        const px = sx(a.action.candidates[i].x), py = sy(a.action.candidates[i].y);
+        if (chosen) {
+          ctx.strokeStyle = a.color;
+          ctx.globalAlpha = 0.7;
+          ctx.lineWidth = 1.8;
+        } else {
+          ctx.strokeStyle = 'rgba(180,200,230,0.14)';
+          ctx.globalAlpha = 1;
+          ctx.lineWidth = 1;
+        }
         ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(px, py); ctx.stroke();
         if (chosen) {
-          ctx.fillStyle = 'rgba(44,220,140,0.75)';
+          ctx.fillStyle = a.color;
+          ctx.globalAlpha = 0.75;
           ctx.beginPath(); ctx.arc(px, py, 3.2, 0, Math.PI * 2); ctx.fill();
         }
+        ctx.globalAlpha = 1;
       }
     }
 
@@ -701,12 +892,17 @@
       ctx.fillStyle = a.color;
       ctx.beginPath(); ctx.arc(sx(a.x), sy(a.y), isOM ? 6 : isSwarm ? 2 : 5, 0, Math.PI * 2); ctx.fill();
       if (isOM) {
-        ctx.strokeStyle = 'rgba(44,220,140,0.4)'; ctx.lineWidth = 1.5;
+        ctx.strokeStyle = a.color;
+        ctx.globalAlpha = 0.4;
+        ctx.lineWidth = 1.5;
         ctx.beginPath(); ctx.arc(sx(a.x), sy(a.y), 9, 0, Math.PI * 2); ctx.stroke();
+        ctx.globalAlpha = 1;
       }
     }
   }
 
+  renderAgentList();
+  renderLegend();
   resize();
 })();
 </script>
