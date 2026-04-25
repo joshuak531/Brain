@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Confidence vs Open-Mindedness</title>
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #161a21;
+    --line: #232936;
+    --text: #e6e6e6;
+    --muted: #8a93a3;
+    --om: #2cdc8c;
+    --conf: #ff7a59;
+    --accent: #2c5cdc;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font: 14px/1.45 -apple-system, system-ui, Segoe UI, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--line);
+  }
+  h1 { margin: 0 0 2px; font-size: 16px; font-weight: 600; }
+  .sub { color: var(--muted); font-size: 12.5px; max-width: 760px; }
+  main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    height: calc(100vh - 56px);
+  }
+  #stage {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  canvas {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    width: 100%;
+    height: 100%;
+    display: block;
+    cursor: crosshair;
+  }
+  .legend {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    padding: 10px 4px 0;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .om { background: var(--om); }
+  .conf { background: var(--conf); }
+  .hint { margin-left: auto; }
+
+  aside {
+    border-left: 1px solid var(--line);
+    padding: 14px 16px;
+    overflow-y: auto;
+    background: #11151c;
+  }
+  .group { margin-bottom: 14px; }
+  .group h3 {
+    margin: 0 0 8px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  label {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+    align-items: center;
+    margin: 6px 0;
+    font-size: 12.5px;
+  }
+  label > .lbl { color: #cdd3dd; }
+  label > .val { color: #fff; min-width: 30px; text-align: right; font-variant-numeric: tabular-nums; font-size: 12px; }
+  input[type=range] { width: 100%; grid-column: 1 / -1; margin: 2px 0 0; }
+  .mode {
+    display: flex;
+    gap: 6px;
+    background: var(--panel);
+    padding: 4px;
+    border-radius: 6px;
+  }
+  .mode button {
+    flex: 1;
+    padding: 7px 8px;
+    background: transparent;
+    color: var(--muted);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font: inherit;
+    font-size: 12.5px;
+  }
+  .mode button.active {
+    background: var(--accent);
+    color: white;
+  }
+  .actions { display: flex; gap: 6px; margin-top: 14px; }
+  .actions button {
+    flex: 1;
+    padding: 9px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font: inherit;
+    font-weight: 600;
+    font-size: 13px;
+  }
+  .actions button.secondary {
+    background: var(--panel);
+    color: #cdd3dd;
+    border: 1px solid var(--line);
+    font-weight: 500;
+  }
+  #status {
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: var(--panel);
+    border-radius: 5px;
+    font-size: 12px;
+    line-height: 1.6;
+    min-height: 70px;
+    color: #cdd3dd;
+  }
+  #status .winner { font-size: 13px; font-weight: 600; margin-bottom: 6px; color: white; }
+  #status .row { display: flex; justify-content: space-between; gap: 8px; }
+  #status .row .k { color: var(--muted); }
+  #status .row .v { font-variant-numeric: tabular-nums; }
+  .conf-only { display: none; }
+  body[data-mode="society"] .conf-only { display: block; }
+</style>
+</head>
+<body data-mode="1v1">
+<header>
+  <h1>Confidence vs Open-Mindedness</h1>
+  <div class="sub">
+    Each agent considers N candidate directions per step (its "rays"), scores each with noise, picks the best, and steps.
+    More rays = more accurate decisions but more time spent thinking. Open-minded usually wins 1v1; a confident swarm usually wins via best-of-many.
+  </div>
+</header>
+<main>
+  <div id="stage">
+    <canvas id="c"></canvas>
+    <div class="legend">
+      <span><span class="swatch om"></span>Open-minded</span>
+      <span><span class="swatch conf"></span>Confident</span>
+      <span class="hint">Click canvas to set Start · Right-click to set Goal</span>
+    </div>
+  </div>
+  <aside>
+    <div class="group">
+      <h3>Mode</h3>
+      <div class="mode">
+        <button id="mode1v1" class="active">1 v 1</button>
+        <button id="modeSwarm">Solo v Society</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <h3>Open-minded agent</h3>
+      <label><span class="lbl">Rays per step</span><span class="val" id="omRaysV">14</span><input type="range" id="omRays" min="3" max="32" value="14"></label>
+      <label><span class="lbl">Step length</span><span class="val" id="omStepV">22</span><input type="range" id="omStep" min="6" max="60" value="22"></label>
+    </div>
+
+    <div class="group">
+      <h3>Confident agent</h3>
+      <label><span class="lbl">Rays per step</span><span class="val" id="cRaysV">3</span><input type="range" id="cRays" min="1" max="8" value="3"></label>
+      <label><span class="lbl">Step length</span><span class="val" id="cStepV">38</span><input type="range" id="cStep" min="10" max="80" value="38"></label>
+    </div>
+
+    <div class="group">
+      <h3>World</h3>
+      <label><span class="lbl">Estimation noise</span><span class="val" id="noiseV">55</span><input type="range" id="noise" min="0" max="120" value="55"></label>
+      <label><span class="lbl">Cost per ray (ms)</span><span class="val" id="rayCostV">2</span><input type="range" id="rayCost" min="0" max="8" step="0.5" value="2"></label>
+      <label class="conf-only"><span class="lbl">Society size</span><span class="val" id="popV">200</span><input type="range" id="pop" min="2" max="800" value="200"></label>
+    </div>
+
+    <div class="actions">
+      <button id="run">Run</button>
+      <button id="reset" class="secondary">Reset</button>
+    </div>
+
+    <div id="status">Set Start (click) and Goal (right-click), then press Run.</div>
+  </aside>
+</main>
+
+<script>
+(() => {
+  // ---------- Setup ----------
+  const cvs = document.getElementById('c');
+  const ctx = cvs.getContext('2d');
+  let W = 0, H = 0;
+
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    const r = cvs.getBoundingClientRect();
+    cvs.width = Math.round(r.width * dpr);
+    cvs.height = Math.round(r.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    W = r.width; H = r.height;
+    if (!agents.length) {
+      // re-center default start/goal on first sizing
+      start = { x: W * 0.12, y: H * 0.7 };
+      goal  = { x: W * 0.85, y: H * 0.25 };
+    }
+    draw();
+  }
+  window.addEventListener('resize', resize);
+
+  // ---------- State ----------
+  let start = { x: 100, y: 380 };
+  let goal  = { x: 800, y: 120 };
+  let mode = '1v1';
+  let agents = [];
+  let running = false;
+  let rafId = null;
+  let tStart = 0;
+  let winner = null;
+
+  const params = {
+    omRays: 14, omStep: 22,
+    cRays: 3, cStep: 38,
+    noise: 55, rayCost: 2, pop: 200,
+  };
+
+  // wire up sliders
+  for (const k of Object.keys(params)) {
+    const el = document.getElementById(k);
+    const lbl = document.getElementById(k + 'V');
+    el.addEventListener('input', () => {
+      params[k] = +el.value;
+      lbl.textContent = el.value;
+    });
+  }
+
+  // mode buttons
+  const m1 = document.getElementById('mode1v1');
+  const m2 = document.getElementById('modeSwarm');
+  m1.addEventListener('click', () => setMode('1v1'));
+  m2.addEventListener('click', () => setMode('society'));
+  function setMode(m) {
+    mode = m;
+    document.body.dataset.mode = m;
+    m1.classList.toggle('active', m === '1v1');
+    m2.classList.toggle('active', m === 'society');
+    reset();
+  }
+
+  // canvas: left-click sets start, right-click sets goal
+  function getMouse(e) {
+    const r = cvs.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+  cvs.addEventListener('click', (e) => {
+    if (running) return;
+    start = getMouse(e);
+    reset();
+  });
+  cvs.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    if (running) return;
+    goal = getMouse(e);
+    reset();
+  });
+
+  document.getElementById('run').addEventListener('click', () => {
+    if (running) return;
+    setupAgents();
+    running = true;
+    winner = null;
+    tStart = performance.now();
+    loop();
+  });
+  document.getElementById('reset').addEventListener('click', reset);
+
+  function reset() {
+    if (rafId) cancelAnimationFrame(rafId);
+    running = false;
+    agents = [];
+    winner = null;
+    setStatus('Set Start (click) and Goal (right-click), then press Run.');
+    draw();
+  }
+
+  function setStatus(html) {
+    document.getElementById('status').innerHTML = html;
+  }
+
+  // ---------- Agents ----------
+  // Each agent reasons by casting `rays` rays in evenly-spaced directions around itself,
+  // scoring each ray's endpoint by -(distance to goal) plus Gaussian noise, then moving
+  // along the best-scoring direction by `stepLen`. More rays = denser angular coverage
+  // = better mean direction (the goal direction is more likely to be among the candidates).
+  // Time cost per step = rays * rayCost (thinking) + MOVE_TIME (movement).
+  const MOVE_TIME = 28; // ms per movement animation, regardless of step length
+  const ARRIVAL_R = 12;
+  const MAX_STEPS = 240;
+
+  function makeAgent(kind, color, opts) {
+    return {
+      kind, color,
+      rays: opts.rays,
+      stepLen: opts.stepLen,
+      x: start.x, y: start.y,
+      from: { x: start.x, y: start.y },
+      to:   { x: start.x, y: start.y },
+      path: [{ x: start.x, y: start.y }],
+      rayCount: 0,
+      steps: 0,
+      finished: false,
+      finishedAt: 0,
+      lastRays: null,
+      stepStart: 0,
+      stepDuration: 1,
+      thinkPhase: 0, // ms spent thinking before moving
+      seed: Math.random() * 1000,
+    };
+  }
+
+  function setupAgents() {
+    agents = [];
+    if (mode === '1v1') {
+      agents.push(makeAgent('om', 'rgba(44,220,140,1)', { rays: params.omRays, stepLen: params.omStep }));
+      agents.push(makeAgent('conf', 'rgba(255,122,89,1)', { rays: params.cRays, stepLen: params.cStep }));
+    } else {
+      agents.push(makeAgent('om', 'rgba(44,220,140,1)', { rays: params.omRays, stepLen: params.omStep }));
+      for (let i = 0; i < params.pop; i++) {
+        agents.push(makeAgent('conf', 'rgba(255,122,89,0.55)', { rays: params.cRays, stepLen: params.cStep }));
+      }
+    }
+    for (const a of agents) planStep(a);
+  }
+
+  function gaussian() {
+    let u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+
+  function planStep(a) {
+    const dirs = new Array(a.rays);
+    const scores = new Array(a.rays);
+    // small rotational jitter so multiple agents don't pick identical angles
+    const offset = (a.seed % 1) * (Math.PI * 2 / a.rays);
+    let bestIdx = 0, bestScore = -Infinity;
+    for (let i = 0; i < a.rays; i++) {
+      const ang = offset + (i / a.rays) * Math.PI * 2;
+      dirs[i] = ang;
+      const ex = a.x + Math.cos(ang) * a.stepLen;
+      const ey = a.y + Math.sin(ang) * a.stepLen;
+      const d = Math.hypot(ex - goal.x, ey - goal.y);
+      const score = -d + gaussian() * params.noise;
+      scores[i] = score;
+      if (score > bestScore) { bestScore = score; bestIdx = i; }
+    }
+    a.lastRays = { dirs, scores, chosen: bestIdx };
+    a.rayCount += a.rays;
+    a.steps++;
+    a.from = { x: a.x, y: a.y };
+    a.to = {
+      x: a.x + Math.cos(dirs[bestIdx]) * a.stepLen,
+      y: a.y + Math.sin(dirs[bestIdx]) * a.stepLen,
+    };
+    a.thinkPhase = a.rays * params.rayCost;
+    a.stepDuration = a.thinkPhase + MOVE_TIME;
+    a.stepStart = performance.now();
+  }
+
+  function loop() {
+    const now = performance.now();
+    let allDone = true;
+    for (const a of agents) {
+      if (a.finished) continue;
+      allDone = false;
+      const elapsed = now - a.stepStart;
+      if (elapsed < a.thinkPhase) {
+        // still thinking — agent stays at .from
+        a.x = a.from.x; a.y = a.from.y;
+      } else {
+        const moveT = Math.min(1, (elapsed - a.thinkPhase) / MOVE_TIME);
+        a.x = a.from.x + (a.to.x - a.from.x) * moveT;
+        a.y = a.from.y + (a.to.y - a.from.y) * moveT;
+      }
+      // arrival check (during or at end of move)
+      const d = Math.hypot(a.x - goal.x, a.y - goal.y);
+      if (d < ARRIVAL_R) {
+        a.finished = true;
+        a.finishedAt = now - tStart;
+        a.path.push({ x: a.x, y: a.y });
+        if (!winner) {
+          winner = a;
+          updateStatus();
+        }
+        continue;
+      }
+      if (elapsed >= a.stepDuration) {
+        a.path.push({ x: a.to.x, y: a.to.y });
+        if (a.steps >= MAX_STEPS) {
+          a.finished = true;
+          a.finishedAt = Infinity;
+        } else {
+          planStep(a);
+        }
+      }
+    }
+    draw();
+    if (!allDone) {
+      rafId = requestAnimationFrame(loop);
+    } else {
+      running = false;
+      updateStatus(true);
+    }
+  }
+
+  function updateStatus(final = false) {
+    const fmt = (ms) => ms === Infinity ? '—' : (ms / 1000).toFixed(2) + 's';
+    if (mode === '1v1') {
+      const om = agents[0], cf = agents[1];
+      const lines = [];
+      if (winner) {
+        const name = winner.kind === 'om' ? 'Open-minded' : 'Confident';
+        lines.push(`<div class="winner" style="color:${winner.kind==='om'?'var(--om)':'var(--conf)'}">${name} reached goal first</div>`);
+      }
+      lines.push(`<div class="row"><span class="k">Open-minded</span><span class="v">${om.steps} steps · ${om.rayCount} rays · ${fmt(om.finishedAt || 0)}</span></div>`);
+      lines.push(`<div class="row"><span class="k">Confident</span><span class="v">${cf.steps} steps · ${cf.rayCount} rays · ${fmt(cf.finishedAt || 0)}</span></div>`);
+      setStatus(lines.join(''));
+    } else {
+      const om = agents[0];
+      const conf = agents.slice(1);
+      const arrived = conf.filter(a => a.finished && a.finishedAt < Infinity);
+      const fastest = arrived.length ? Math.min(...arrived.map(a => a.finishedAt)) : null;
+      const lines = [];
+      if (winner) {
+        const name = winner.kind === 'om'
+          ? 'Open-minded'
+          : `Best of ${conf.length} confident`;
+        lines.push(`<div class="winner" style="color:${winner.kind==='om'?'var(--om)':'var(--conf)'}">${name} reached goal first</div>`);
+      }
+      lines.push(`<div class="row"><span class="k">Open-minded</span><span class="v">${om.steps} steps · ${fmt(om.finishedAt || 0)}</span></div>`);
+      lines.push(`<div class="row"><span class="k">Swarm fastest</span><span class="v">${arrived.length}/${conf.length} arrived · ${fastest!==null ? fmt(fastest) : '—'}</span></div>`);
+      if (arrived.length > 1) {
+        const times = arrived.map(a => a.finishedAt).sort((a,b)=>a-b);
+        const median = times[Math.floor(times.length/2)];
+        lines.push(`<div class="row"><span class="k">Swarm median</span><span class="v">${fmt(median)}</span></div>`);
+      }
+      setStatus(lines.join(''));
+    }
+  }
+
+  // ---------- Draw ----------
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    // grid
+    ctx.strokeStyle = 'rgba(255,255,255,0.025)';
+    ctx.lineWidth = 1;
+    const grid = 40;
+    for (let x = grid; x < W; x += grid) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    for (let y = grid; y < H; y += grid) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+    // straight reference line start→goal
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.setLineDash([4, 6]);
+    ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(goal.x, goal.y); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // paths
+    for (const a of agents) {
+      if (a.path.length < 1) continue;
+      const isOM = a.kind === 'om';
+      const isWinner = a === winner && winner.kind === 'conf';
+      ctx.lineWidth = isOM ? 2.2 : (isWinner ? 1.8 : 1);
+      ctx.strokeStyle = isOM
+        ? 'rgba(44,220,140,0.85)'
+        : (isWinner ? 'rgba(255,122,89,0.95)' : (mode === 'society' ? 'rgba(255,122,89,0.16)' : 'rgba(255,122,89,0.7)'));
+      ctx.beginPath();
+      ctx.moveTo(a.path[0].x, a.path[0].y);
+      for (let i = 1; i < a.path.length; i++) ctx.lineTo(a.path[i].x, a.path[i].y);
+      ctx.lineTo(a.x, a.y);
+      ctx.stroke();
+    }
+
+    // thinking rays — only for OM and (in 1v1) the confident agent.
+    // Skip for swarm to avoid visual noise / perf cost.
+    const showRaysFor = mode === '1v1' ? agents : agents.slice(0, 1);
+    const now = performance.now();
+    for (const a of showRaysFor) {
+      if (!a.lastRays || a.finished) continue;
+      const elapsed = now - a.stepStart;
+      // fade rays in during thinking, hold briefly, then fade as movement happens
+      let alpha;
+      if (elapsed < a.thinkPhase) {
+        alpha = Math.min(1, elapsed / Math.max(1, a.thinkPhase * 0.6));
+      } else {
+        alpha = Math.max(0, 1 - (elapsed - a.thinkPhase) / MOVE_TIME);
+      }
+      if (alpha <= 0.02) continue;
+
+      const r = a.lastRays;
+      // reveal rays sequentially during thinking
+      const revealUpTo = elapsed < a.thinkPhase
+        ? Math.ceil((elapsed / a.thinkPhase) * r.dirs.length)
+        : r.dirs.length;
+
+      for (let i = 0; i < Math.min(revealUpTo, r.dirs.length); i++) {
+        const ang = r.dirs[i];
+        const ex = a.from.x + Math.cos(ang) * a.stepLen;
+        const ey = a.from.y + Math.sin(ang) * a.stepLen;
+        const isChosen = i === r.chosen && elapsed >= a.thinkPhase * 0.95;
+        if (isChosen) {
+          ctx.strokeStyle = a.kind === 'om'
+            ? `rgba(44,220,140,${0.4 + alpha * 0.5})`
+            : `rgba(255,122,89,${0.4 + alpha * 0.5})`;
+          ctx.lineWidth = 2;
+        } else {
+          ctx.strokeStyle = `rgba(180,200,230,${alpha * 0.25})`;
+          ctx.lineWidth = 1;
+        }
+        ctx.beginPath();
+        ctx.moveTo(a.from.x, a.from.y);
+        ctx.lineTo(ex, ey);
+        ctx.stroke();
+        if (!isChosen) {
+          ctx.fillStyle = `rgba(180,200,230,${alpha * 0.4})`;
+          ctx.beginPath();
+          ctx.arc(ex, ey, 1.4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      // perception circle (matches PDF aesthetic)
+      ctx.strokeStyle = a.kind === 'om'
+        ? `rgba(44,220,140,${alpha * 0.18})`
+        : `rgba(255,122,89,${alpha * 0.18})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(a.from.x, a.from.y, a.stepLen, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // start & goal markers
+    drawMarker(start, '#9aa4b6', 'start');
+    drawGoal(goal);
+
+    // agent dots (drawn last so they're on top)
+    for (const a of agents) {
+      const isOM = a.kind === 'om';
+      const isSwarmMember = mode === 'society' && !isOM;
+      ctx.fillStyle = a.color;
+      ctx.beginPath();
+      ctx.arc(a.x, a.y, isOM ? 6 : (isSwarmMember ? 2.2 : 5), 0, Math.PI * 2);
+      ctx.fill();
+      if (isOM) {
+        ctx.strokeStyle = 'rgba(44,220,140,0.4)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(a.x, a.y, 9, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+  }
+
+  function drawMarker(p, color, label) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.font = '11px -apple-system, system-ui, sans-serif';
+    ctx.fillText(label, p.x + 9, p.y - 8);
+  }
+
+  function drawGoal(p) {
+    ctx.strokeStyle = 'rgba(44,220,140,0.65)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, ARRIVAL_R, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(44,220,140,0.18)';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, ARRIVAL_R, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.font = '11px -apple-system, system-ui, sans-serif';
+    ctx.fillText('goal', p.x + ARRIVAL_R + 4, p.y - 8);
+  }
+
+  // first paint
+  resize();
+})();
+</script>
+</body>
+</html>
