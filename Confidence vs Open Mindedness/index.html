@@ -149,8 +149,8 @@
 <header>
   <h1>Confidence vs Open-Mindedness</h1>
   <div class="sub">
-    Each agent considers N candidate directions per step (its "rays"), scores each with noise, picks the best, and steps.
-    More rays = more accurate decisions but more time spent thinking. Open-minded usually wins 1v1; a confident swarm usually wins via best-of-many.
+    Open-mindedness runs explicit <code>up / down / left / right</code> lookahead permutations, then commits one move.
+    Confidence does zero lookahead and simply picks a heading. One confident agent often misses; a big society can still win by spraying enough straight lines.
   </div>
 </header>
 <main>
@@ -173,21 +173,19 @@
 
     <div class="group">
       <h3>Open-minded agent</h3>
-      <label><span class="lbl">Rays per step</span><span class="val" id="omRaysV">14</span><input type="range" id="omRays" min="3" max="32" value="14"></label>
-      <label><span class="lbl">Step length</span><span class="val" id="omStepV">22</span><input type="range" id="omStep" min="6" max="60" value="22"></label>
+      <label><span class="lbl">Lookahead depth</span><span class="val" id="omDepthV">2</span><input type="range" id="omDepth" min="1" max="4" value="2"></label>
+      <label><span class="lbl">Move length</span><span class="val" id="omStepV">26</span><input type="range" id="omStep" min="8" max="54" value="26"></label>
     </div>
 
     <div class="group">
       <h3>Confident agent</h3>
-      <label><span class="lbl">Rays per step</span><span class="val" id="cRaysV">3</span><input type="range" id="cRays" min="1" max="8" value="3"></label>
-      <label><span class="lbl">Step length</span><span class="val" id="cStepV">38</span><input type="range" id="cStep" min="10" max="80" value="38"></label>
+      <label><span class="lbl">Move length</span><span class="val" id="cStepV">34</span><input type="range" id="cStep" min="10" max="70" value="34"></label>
     </div>
 
     <div class="group">
       <h3>World</h3>
-      <label><span class="lbl">Estimation noise</span><span class="val" id="noiseV">55</span><input type="range" id="noise" min="0" max="120" value="55"></label>
-      <label><span class="lbl">Cost per ray (ms)</span><span class="val" id="rayCostV">2</span><input type="range" id="rayCost" min="0" max="8" step="0.5" value="2"></label>
-      <label class="conf-only"><span class="lbl">Society size</span><span class="val" id="popV">200</span><input type="range" id="pop" min="2" max="800" value="200"></label>
+      <label><span class="lbl">Cost per permutation (ms)</span><span class="val" id="analysisCostV">18</span><input type="range" id="analysisCost" min="2" max="50" value="18"></label>
+      <label class="conf-only"><span class="lbl">Society size</span><span class="val" id="popV">160</span><input type="range" id="pop" min="2" max="800" value="160"></label>
     </div>
 
     <div class="actions">
@@ -195,16 +193,25 @@
       <button id="reset" class="secondary">Reset</button>
     </div>
 
-    <div id="status">Set Start (click) and Goal (right-click), then press Run.</div>
+    <div id="status">Set Start (click) and Goal (right-click), then press Run. Open-mindedness will explore discrete permutations; confidence will commit to straight lines.</div>
   </aside>
 </main>
 
 <script>
 (() => {
-  // ---------- Setup ----------
   const cvs = document.getElementById('c');
   const ctx = cvs.getContext('2d');
   let W = 0, H = 0;
+  const DIRS = [
+    { name: 'right', dx: 1, dy: 0 },
+    { name: 'left', dx: -1, dy: 0 },
+    { name: 'up', dx: 0, dy: -1 },
+    { name: 'down', dx: 0, dy: 1 },
+  ];
+  const MOVE_TIME = 180;
+  const ARRIVAL_R = 16;
+  const MAX_STEPS = 260;
+  const OUT_MARGIN = 140;
 
   function resize() {
     const dpr = window.devicePixelRatio || 1;
@@ -222,7 +229,6 @@
   }
   window.addEventListener('resize', resize);
 
-  // ---------- State ----------
   let start = { x: 100, y: 380 };
   let goal  = { x: 800, y: 120 };
   let mode = '1v1';
@@ -233,12 +239,13 @@
   let winner = null;
 
   const params = {
-    omRays: 14, omStep: 22,
-    cRays: 3, cStep: 38,
-    noise: 55, rayCost: 2, pop: 200,
+    omDepth: 2,
+    omStep: 26,
+    cStep: 34,
+    analysisCost: 18,
+    pop: 160,
   };
 
-  // wire up sliders
   for (const k of Object.keys(params)) {
     const el = document.getElementById(k);
     const lbl = document.getElementById(k + 'V');
@@ -248,7 +255,6 @@
     });
   }
 
-  // mode buttons
   const m1 = document.getElementById('mode1v1');
   const m2 = document.getElementById('modeSwarm');
   m1.addEventListener('click', () => setMode('1v1'));
@@ -261,7 +267,6 @@
     reset();
   }
 
-  // canvas: left-click sets start, right-click sets goal
   function getMouse(e) {
     const r = cvs.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
@@ -301,85 +306,158 @@
     document.getElementById('status').innerHTML = html;
   }
 
-  // ---------- Agents ----------
-  // Each agent reasons by casting `rays` rays in evenly-spaced directions around itself,
-  // scoring each ray's endpoint by -(distance to goal) plus Gaussian noise, then moving
-  // along the best-scoring direction by `stepLen`. More rays = denser angular coverage
-  // = better mean direction (the goal direction is more likely to be among the candidates).
-  // Time cost per step = rays * rayCost (thinking) + MOVE_TIME (movement).
-  const MOVE_TIME = 28; // ms per movement animation, regardless of step length
-  const ARRIVAL_R = 12;
-  const MAX_STEPS = 240;
+  function permutations(depth) {
+    return Math.pow(4, depth);
+  }
+
+  function fmt(ms) {
+    return ms === Infinity ? '—' : (ms / 1000).toFixed(2) + 's';
+  }
+
+  function distance(x1, y1, x2, y2) {
+    return Math.hypot(x1 - x2, y1 - y2);
+  }
+
+  function pointToSegmentDistance(px, py, ax, ay, bx, by) {
+    const abx = bx - ax;
+    const aby = by - ay;
+    const ab2 = abx * abx + aby * aby;
+    if (!ab2) return distance(px, py, ax, ay);
+    const t = Math.max(0, Math.min(1, ((px - ax) * abx + (py - ay) * aby) / ab2));
+    const cx = ax + abx * t;
+    const cy = ay + aby * t;
+    return distance(px, py, cx, cy);
+  }
+
+  function headingLabel(rad) {
+    const deg = ((rad * 180 / Math.PI) % 360 + 360) % 360;
+    return deg.toFixed(0) + '°';
+  }
+
+  function withinBounds(x, y) {
+    return x >= -OUT_MARGIN && x <= W + OUT_MARGIN && y >= -OUT_MARGIN && y <= H + OUT_MARGIN;
+  }
 
   function makeAgent(kind, color, opts) {
     return {
       kind, color,
-      rays: opts.rays,
       stepLen: opts.stepLen,
+      depth: opts.depth || 0,
+      heading: opts.heading ?? null,
       x: start.x, y: start.y,
       from: { x: start.x, y: start.y },
       to:   { x: start.x, y: start.y },
       path: [{ x: start.x, y: start.y }],
-      rayCount: 0,
-      steps: 0,
+      moves: 0,
+      decisions: 0,
+      permutationCount: 0,
+      closest: distance(start.x, start.y, goal.x, goal.y),
       finished: false,
       finishedAt: 0,
-      lastRays: null,
+      lastPlan: null,
       stepStart: 0,
       stepDuration: 1,
-      thinkPhase: 0, // ms spent thinking before moving
-      seed: Math.random() * 1000,
+      thinkPhase: 0,
     };
   }
 
   function setupAgents() {
     agents = [];
     if (mode === '1v1') {
-      agents.push(makeAgent('om', 'rgba(44,220,140,1)', { rays: params.omRays, stepLen: params.omStep }));
-      agents.push(makeAgent('conf', 'rgba(255,122,89,1)', { rays: params.cRays, stepLen: params.cStep }));
+      agents.push(makeAgent('om', 'rgba(44,220,140,1)', { depth: params.omDepth, stepLen: params.omStep }));
+      agents.push(makeAgent('conf', 'rgba(255,122,89,1)', { stepLen: params.cStep, heading: Math.random() * Math.PI * 2 }));
     } else {
-      agents.push(makeAgent('om', 'rgba(44,220,140,1)', { rays: params.omRays, stepLen: params.omStep }));
+      agents.push(makeAgent('om', 'rgba(44,220,140,1)', { depth: params.omDepth, stepLen: params.omStep }));
       for (let i = 0; i < params.pop; i++) {
-        agents.push(makeAgent('conf', 'rgba(255,122,89,0.55)', { rays: params.cRays, stepLen: params.cStep }));
+        agents.push(makeAgent('conf', 'rgba(255,122,89,0.52)', { stepLen: params.cStep, heading: Math.random() * Math.PI * 2 }));
       }
     }
     for (const a of agents) planStep(a);
-  }
-
-  function gaussian() {
-    let u = 0, v = 0;
-    while (u === 0) u = Math.random();
-    while (v === 0) v = Math.random();
-    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+    updateStatus();
   }
 
   function planStep(a) {
-    const dirs = new Array(a.rays);
-    const scores = new Array(a.rays);
-    // small rotational jitter so multiple agents don't pick identical angles
-    const offset = (a.seed % 1) * (Math.PI * 2 / a.rays);
-    let bestIdx = 0, bestScore = -Infinity;
-    for (let i = 0; i < a.rays; i++) {
-      const ang = offset + (i / a.rays) * Math.PI * 2;
-      dirs[i] = ang;
-      const ex = a.x + Math.cos(ang) * a.stepLen;
-      const ey = a.y + Math.sin(ang) * a.stepLen;
-      const d = Math.hypot(ex - goal.x, ey - goal.y);
-      const score = -d + gaussian() * params.noise;
-      scores[i] = score;
-      if (score > bestScore) { bestScore = score; bestIdx = i; }
+    if (a.kind === 'om') {
+      planOpenMindedStep(a);
+    } else {
+      planConfidentStep(a);
     }
-    a.lastRays = { dirs, scores, chosen: bestIdx };
-    a.rayCount += a.rays;
-    a.steps++;
-    a.from = { x: a.x, y: a.y };
-    a.to = {
-      x: a.x + Math.cos(dirs[bestIdx]) * a.stepLen,
-      y: a.y + Math.sin(dirs[bestIdx]) * a.stepLen,
+  }
+
+  function planOpenMindedStep(a) {
+    const branches = [];
+    let best = null;
+
+    function walk(x, y, depthLeft, points, dirs) {
+      if (depthLeft === 0) {
+        const leafDistance = distance(x, y, goal.x, goal.y);
+        const branch = {
+          points: points.map((p) => ({ x: p.x, y: p.y })),
+          dirs: dirs.slice(),
+          leafDistance,
+        };
+        branches.push(branch);
+        if (!best || leafDistance < best.leafDistance - 0.001) best = branch;
+        return;
+      }
+
+      for (const dir of DIRS) {
+        const nx = x + dir.dx * a.stepLen;
+        const ny = y + dir.dy * a.stepLen;
+        points.push({ x: nx, y: ny });
+        dirs.push(dir);
+        walk(nx, ny, depthLeft - 1, points, dirs);
+        dirs.pop();
+        points.pop();
+      }
+    }
+
+    walk(a.x, a.y, a.depth, [{ x: a.x, y: a.y }], []);
+
+    a.lastPlan = {
+      branches,
+      best,
+      permutations: branches.length,
     };
-    a.thinkPhase = a.rays * params.rayCost;
+    a.decisions++;
+    a.permutationCount += branches.length;
+    a.moves++;
+    a.from = { x: a.x, y: a.y };
+    a.to = { x: best.points[1].x, y: best.points[1].y };
+    a.thinkPhase = branches.length * params.analysisCost;
     a.stepDuration = a.thinkPhase + MOVE_TIME;
     a.stepStart = performance.now();
+  }
+
+  function planConfidentStep(a) {
+    a.lastPlan = { heading: a.heading };
+    a.moves++;
+    a.from = { x: a.x, y: a.y };
+    a.to = {
+      x: a.x + Math.cos(a.heading) * a.stepLen,
+      y: a.y + Math.sin(a.heading) * a.stepLen,
+    };
+    a.thinkPhase = 0;
+    a.stepDuration = MOVE_TIME;
+    a.stepStart = performance.now();
+  }
+
+  function finishAgent(a, now) {
+    a.finished = true;
+    a.finishedAt = now - tStart;
+    const last = a.path[a.path.length - 1];
+    if (!last || last.x !== a.x || last.y !== a.y) {
+      a.path.push({ x: a.x, y: a.y });
+    }
+    if (!winner) {
+      winner = a;
+      updateStatus();
+    }
+  }
+
+  function stopAgent(a) {
+    a.finished = true;
+    a.finishedAt = Infinity;
   }
 
   function loop() {
@@ -390,30 +468,29 @@
       allDone = false;
       const elapsed = now - a.stepStart;
       if (elapsed < a.thinkPhase) {
-        // still thinking — agent stays at .from
         a.x = a.from.x; a.y = a.from.y;
       } else {
         const moveT = Math.min(1, (elapsed - a.thinkPhase) / MOVE_TIME);
         a.x = a.from.x + (a.to.x - a.from.x) * moveT;
         a.y = a.from.y + (a.to.y - a.from.y) * moveT;
       }
-      // arrival check (during or at end of move)
-      const d = Math.hypot(a.x - goal.x, a.y - goal.y);
-      if (d < ARRIVAL_R) {
-        a.finished = true;
-        a.finishedAt = now - tStart;
-        a.path.push({ x: a.x, y: a.y });
-        if (!winner) {
-          winner = a;
-          updateStatus();
-        }
+
+      const segmentMiss = pointToSegmentDistance(goal.x, goal.y, a.from.x, a.from.y, a.x, a.y);
+      a.closest = Math.min(a.closest, segmentMiss);
+      if (segmentMiss <= ARRIVAL_R) {
+        finishAgent(a, now);
         continue;
       }
+
       if (elapsed >= a.stepDuration) {
         a.path.push({ x: a.to.x, y: a.to.y });
-        if (a.steps >= MAX_STEPS) {
-          a.finished = true;
-          a.finishedAt = Infinity;
+        a.x = a.to.x;
+        a.y = a.to.y;
+        if (a.closest <= ARRIVAL_R) {
+          finishAgent(a, now);
+        } else if (a.moves >= MAX_STEPS || !withinBounds(a.x, a.y)) {
+          stopAgent(a);
+          updateStatus();
         } else {
           planStep(a);
         }
@@ -428,58 +505,89 @@
     }
   }
 
+  function societyEstimate() {
+    const d = distance(start.x, start.y, goal.x, goal.y);
+    if (d <= ARRIVAL_R) {
+      return { successProb: 1, coneDeg: 360, n50: 1, n90: 1 };
+    }
+    const halfAngle = Math.asin(Math.min(1, ARRIVAL_R / d));
+    const successProb = halfAngle / Math.PI;
+    const needed = (target) => successProb >= 1
+      ? 1
+      : Math.max(1, Math.ceil(Math.log(1 - target) / Math.log(1 - successProb)));
+    return {
+      successProb,
+      coneDeg: halfAngle * 2 * 180 / Math.PI,
+      n50: needed(0.5),
+      n90: needed(0.9),
+    };
+  }
+
   function updateStatus(final = false) {
-    const fmt = (ms) => ms === Infinity ? '—' : (ms / 1000).toFixed(2) + 's';
     if (mode === '1v1') {
       const om = agents[0], cf = agents[1];
       const lines = [];
-      if (winner) {
-        const name = winner.kind === 'om' ? 'Open-minded' : 'Confident';
-        lines.push(`<div class="winner" style="color:${winner.kind==='om'?'var(--om)':'var(--conf)'}">${name} reached goal first</div>`);
+      if (winner && winner.finishedAt < Infinity) {
+        const winnerName = winner.kind === 'om' ? 'Open-minded' : 'Confident';
+        lines.push(`<div class="winner" style="color:${winner.kind==='om'?'var(--om)':'var(--conf)'}">${winnerName} reached the goal first</div>`);
+      } else if (final) {
+        lines.push('<div class="winner">Neither agent reached the goal</div>');
+      } else {
+        lines.push('<div class="winner">Watching one planner versus one committed heading</div>');
       }
-      lines.push(`<div class="row"><span class="k">Open-minded</span><span class="v">${om.steps} steps · ${om.rayCount} rays · ${fmt(om.finishedAt || 0)}</span></div>`);
-      lines.push(`<div class="row"><span class="k">Confident</span><span class="v">${cf.steps} steps · ${cf.rayCount} rays · ${fmt(cf.finishedAt || 0)}</span></div>`);
+      if (om) {
+        const perDecision = permutations(om.depth);
+        lines.push(`<div class="row"><span class="k">Open-minded</span><span class="v">depth ${om.depth} · ${perDecision} permutations/move · ${fmt(om.finishedAt || 0)}</span></div>`);
+        lines.push(`<div class="row"><span class="k">Planner work</span><span class="v">${om.moves} real moves · ${om.permutationCount} permutations checked</span></div>`);
+      }
+      if (cf) {
+        lines.push(`<div class="row"><span class="k">Confident</span><span class="v">0 permutations · heading ${headingLabel(cf.heading)} · ${fmt(cf.finishedAt || 0)}</span></div>`);
+        lines.push(`<div class="row"><span class="k">Closest miss</span><span class="v">${cf.closest.toFixed(1)} px from goal</span></div>`);
+      }
       setStatus(lines.join(''));
     } else {
       const om = agents[0];
       const conf = agents.slice(1);
       const arrived = conf.filter(a => a.finished && a.finishedAt < Infinity);
       const fastest = arrived.length ? Math.min(...arrived.map(a => a.finishedAt)) : null;
+      const bestConf = conf.reduce((best, a) => !best || a.closest < best.closest ? a : best, null);
+      const estimate = societyEstimate();
       const lines = [];
-      if (winner) {
-        const name = winner.kind === 'om'
+      if (winner && winner.finishedAt < Infinity) {
+        const winnerName = winner.kind === 'om'
           ? 'Open-minded'
           : `Best of ${conf.length} confident`;
-        lines.push(`<div class="winner" style="color:${winner.kind==='om'?'var(--om)':'var(--conf)'}">${name} reached goal first</div>`);
+        lines.push(`<div class="winner" style="color:${winner.kind==='om'?'var(--om)':'var(--conf)'}">${winnerName} reached the goal first</div>`);
+      } else if (final) {
+        lines.push('<div class="winner">No path hit the goal this run, so the straight-line crowd needed more luck or more agents</div>');
+      } else {
+        lines.push('<div class="winner">Watching one planner versus a spread of straight lines</div>');
       }
-      lines.push(`<div class="row"><span class="k">Open-minded</span><span class="v">${om.steps} steps · ${fmt(om.finishedAt || 0)}</span></div>`);
-      lines.push(`<div class="row"><span class="k">Swarm fastest</span><span class="v">${arrived.length}/${conf.length} arrived · ${fastest!==null ? fmt(fastest) : '—'}</span></div>`);
-      if (arrived.length > 1) {
-        const times = arrived.map(a => a.finishedAt).sort((a,b)=>a-b);
-        const median = times[Math.floor(times.length/2)];
-        lines.push(`<div class="row"><span class="k">Swarm median</span><span class="v">${fmt(median)}</span></div>`);
+      lines.push(`<div class="row"><span class="k">Open-minded</span><span class="v">depth ${om.depth} · ${permutations(om.depth)} permutations/move · ${fmt(om.finishedAt || 0)}</span></div>`);
+      lines.push(`<div class="row"><span class="k">Planner work</span><span class="v">${om.moves} real moves · ${om.permutationCount} permutations checked</span></div>`);
+      lines.push(`<div class="row"><span class="k">Straight-line society</span><span class="v">${arrived.length}/${conf.length} arrived · ${fastest !== null ? fmt(fastest) : '—'}</span></div>`);
+      if (bestConf) {
+        lines.push(`<div class="row"><span class="k">Best straight-line miss</span><span class="v">${bestConf.closest.toFixed(1)} px</span></div>`);
       }
+      lines.push(`<div class="row"><span class="k">Hit cone</span><span class="v">${estimate.coneDeg.toFixed(2)}° of 360°</span></div>`);
+      lines.push(`<div class="row"><span class="k">Expected crowd size</span><span class="v">~${estimate.n50} for 50% · ~${estimate.n90} for 90%</span></div>`);
       setStatus(lines.join(''));
     }
   }
 
-  // ---------- Draw ----------
   function draw() {
     ctx.clearRect(0, 0, W, H);
-    // grid
     ctx.strokeStyle = 'rgba(255,255,255,0.025)';
     ctx.lineWidth = 1;
     const grid = 40;
     for (let x = grid; x < W; x += grid) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
     for (let y = grid; y < H; y += grid) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
 
-    // straight reference line start→goal
     ctx.strokeStyle = 'rgba(255,255,255,0.06)';
     ctx.setLineDash([4, 6]);
     ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(goal.x, goal.y); ctx.stroke();
     ctx.setLineDash([]);
 
-    // paths
     for (const a of agents) {
       if (a.path.length < 1) continue;
       const isOM = a.kind === 'om';
@@ -495,14 +603,10 @@
       ctx.stroke();
     }
 
-    // thinking rays — only for OM and (in 1v1) the confident agent.
-    // Skip for swarm to avoid visual noise / perf cost.
-    const showRaysFor = mode === '1v1' ? agents : agents.slice(0, 1);
     const now = performance.now();
-    for (const a of showRaysFor) {
-      if (!a.lastRays || a.finished) continue;
+    for (const a of agents.slice(0, 1)) {
+      if (a.kind !== 'om' || !a.lastPlan || a.finished) continue;
       const elapsed = now - a.stepStart;
-      // fade rays in during thinking, hold briefly, then fade as movement happens
       let alpha;
       if (elapsed < a.thinkPhase) {
         alpha = Math.min(1, elapsed / Math.max(1, a.thinkPhase * 0.6));
@@ -511,52 +615,41 @@
       }
       if (alpha <= 0.02) continue;
 
-      const r = a.lastRays;
-      // reveal rays sequentially during thinking
-      const revealUpTo = elapsed < a.thinkPhase
-        ? Math.ceil((elapsed / a.thinkPhase) * r.dirs.length)
-        : r.dirs.length;
+      const branches = a.lastPlan.branches;
+      const revealCount = elapsed < a.thinkPhase
+        ? Math.ceil((elapsed / Math.max(1, a.thinkPhase)) * branches.length)
+        : branches.length;
 
-      for (let i = 0; i < Math.min(revealUpTo, r.dirs.length); i++) {
-        const ang = r.dirs[i];
-        const ex = a.from.x + Math.cos(ang) * a.stepLen;
-        const ey = a.from.y + Math.sin(ang) * a.stepLen;
-        const isChosen = i === r.chosen && elapsed >= a.thinkPhase * 0.95;
-        if (isChosen) {
-          ctx.strokeStyle = a.kind === 'om'
-            ? `rgba(44,220,140,${0.4 + alpha * 0.5})`
-            : `rgba(255,122,89,${0.4 + alpha * 0.5})`;
-          ctx.lineWidth = 2;
-        } else {
-          ctx.strokeStyle = `rgba(180,200,230,${alpha * 0.25})`;
-          ctx.lineWidth = 1;
-        }
+      for (let i = 0; i < Math.min(revealCount, branches.length); i++) {
+        const branch = branches[i];
+        const isChosen = branch === a.lastPlan.best;
+        ctx.strokeStyle = isChosen
+          ? `rgba(44,220,140,${0.42 + alpha * 0.45})`
+          : `rgba(180,200,230,${alpha * 0.12})`;
+        ctx.lineWidth = isChosen ? 1.8 : 1;
         ctx.beginPath();
-        ctx.moveTo(a.from.x, a.from.y);
-        ctx.lineTo(ex, ey);
-        ctx.stroke();
-        if (!isChosen) {
-          ctx.fillStyle = `rgba(180,200,230,${alpha * 0.4})`;
-          ctx.beginPath();
-          ctx.arc(ex, ey, 1.4, 0, Math.PI * 2);
-          ctx.fill();
+        ctx.moveTo(branch.points[0].x, branch.points[0].y);
+        for (let j = 1; j < branch.points.length; j++) {
+          ctx.lineTo(branch.points[j].x, branch.points[j].y);
         }
+        ctx.stroke();
       }
-      // perception circle (matches PDF aesthetic)
-      ctx.strokeStyle = a.kind === 'om'
-        ? `rgba(44,220,140,${alpha * 0.18})`
-        : `rgba(255,122,89,${alpha * 0.18})`;
+
+      ctx.strokeStyle = `rgba(44,220,140,${alpha * 0.2})`;
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.arc(a.from.x, a.from.y, a.stepLen, 0, Math.PI * 2);
+      ctx.rect(
+        a.from.x - a.stepLen * a.depth,
+        a.from.y - a.stepLen * a.depth,
+        a.stepLen * a.depth * 2,
+        a.stepLen * a.depth * 2
+      );
       ctx.stroke();
     }
 
-    // start & goal markers
     drawMarker(start, '#9aa4b6', 'start');
     drawGoal(goal);
 
-    // agent dots (drawn last so they're on top)
     for (const a of agents) {
       const isOM = a.kind === 'om';
       const isSwarmMember = mode === 'society' && !isOM;
@@ -599,7 +692,6 @@
     ctx.fillText('goal', p.x + ARRIVAL_R + 4, p.y - 8);
   }
 
-  // first paint
   resize();
 })();
 </script>
