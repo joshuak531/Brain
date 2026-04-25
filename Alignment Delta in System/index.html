@@ -25,21 +25,24 @@ body {
 }
 
 .hd {
-  padding: 13px 22px;
+  padding: 13px 22px 11px;
   border-bottom: 1px solid var(--line);
-  display: flex; align-items: center; gap: 14px;
+  display: flex; flex-direction: column; gap: 5px;
   flex-shrink: 0;
 }
+.hd-row { display: flex; align-items: center; gap: 14px; }
 .back {
   color: var(--muted); text-decoration: none; font-size: 12px;
   display: flex; align-items: center; gap: 4px; transition: color .1s;
+  flex-shrink: 0;
 }
 .back:hover { color: var(--text); }
 .hd-title { font-size: 15px; font-weight: 600; flex: 1; }
 .hd-tag {
   font-size: 10.5px; font-weight: 600; letter-spacing: .08em;
-  text-transform: uppercase; color: var(--cgreen);
+  text-transform: uppercase; color: var(--cgreen); flex-shrink: 0;
 }
+.hd-sub { font-size: 12px; color: var(--muted); }
 
 .body { display: flex; flex: 1; overflow: hidden; }
 .canvas-area { flex: 1; position: relative; overflow: hidden; }
@@ -87,9 +90,12 @@ canvas { display: block; }
 <body>
 
 <div class="hd">
-  <a href="../index.html" class="back">← Experiments</a>
-  <span class="hd-title">Alignment Delta in System</span>
-  <span class="hd-tag">Decision theory · System dynamics</span>
+  <div class="hd-row">
+    <a href="../index.html" class="back">← Experiments</a>
+    <span class="hd-title">Alignment Delta in System</span>
+    <span class="hd-tag">Decision theory · System dynamics</span>
+  </div>
+  <div class="hd-sub">Any decision moves you toward some stakeholders and away from others. Each path shows every possible move toward a stakeholder, colored by whether it benefits everyone, shifts benefit between actors, or reduces alignment overall.</div>
 </div>
 
 <div class="body">

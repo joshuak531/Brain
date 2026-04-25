@@ -21,9 +21,10 @@
     background: var(--bg); color: var(--text);
   }
   header {
-    padding: 13px 22px; border-bottom: 1px solid var(--line);
-    display: flex; align-items: center; gap: 14px;
+    padding: 13px 22px 11px; border-bottom: 1px solid var(--line);
+    display: flex; flex-direction: column; gap: 5px;
   }
+  .hd-row { display: flex; align-items: center; gap: 14px; }
   .back {
     color: var(--muted); text-decoration: none; font-size: 12px;
     display: flex; align-items: center; gap: 4px; transition: color .1s;
@@ -35,11 +36,11 @@
     font-size: 10.5px; font-weight: 600; letter-spacing: .08em;
     text-transform: uppercase; color: var(--om); flex-shrink: 0;
   }
-  .sub { display: none; }
+  .sub { color: var(--muted); font-size: 12px; }
   main {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 300px;
-    height: calc(100vh - 48px);
+    height: calc(100vh - 72px);
   }
   #stage { padding: 16px; display: flex; flex-direction: column; min-width: 0; }
   canvas {
@@ -145,9 +146,12 @@
 </head>
 <body>
 <header>
-  <a href="../index.html" class="back">← Experiments</a>
-  <h1>Confidence vs Open-Mindedness</h1>
-  <span class="tag">Decision-making · Agent simulation</span>
+  <div class="hd-row">
+    <a href="../index.html" class="back">← Experiments</a>
+    <h1>Confidence vs Open-Mindedness</h1>
+    <span class="tag">Decision-making · Agent simulation</span>
+  </div>
+  <div class="sub">One methodical agent tests candidate directions before each move; a crowd of confident agents each picks a random heading and commits. Tweak society size, goal distance, and analysis accuracy to find where the crowd wins.</div>
 </header>
 <main>
   <div id="stage">
