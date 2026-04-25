@@ -233,6 +233,20 @@
     </div>
     <div class="modal-hint">100% = always picks the closest direction &nbsp;·&nbsp; lower = cascade selection biased toward the worst candidate</div>
 
+    <div class="modal-label">Exploration Efficiency</div>
+    <div class="presets" id="modalEffPresets">
+      <button data-val="0" class="active">0%</button>
+      <button data-val="0.5">50%</button>
+      <button data-val="0.75">75%</button>
+      <button data-val="0.9">90%</button>
+      <button data-val="1">100%</button>
+    </div>
+    <div class="text-input">
+      <span>Custom %:</span>
+      <input type="number" id="modalEffInput" min="0" max="100" value="0">
+    </div>
+    <div class="modal-hint">0% = explore every direction fully · higher = abort wrong-direction paths earlier, spending less on dead ends</div>
+
     <div class="modal-actions">
       <button id="modalCancel">Cancel</button>
       <button id="modalAccept">Add Agent</button>
@@ -265,12 +279,13 @@
   let mediaRecorder = null;
   let recordedChunks = [];
 
-  let omAgentDefs = [{ permutations: 4, accuracy: 1 }];
+  let omAgentDefs = [{ permutations: 4, accuracy: 1, explorationEfficiency: 0 }];
 
   // Modal state
   let editingIdx = null;
   let modalPerms = 4;
   let modalAccuracy = 1;
+  let modalEfficiency = 0;
 
   const params = { goalDistance: 3000, pop: 200, distribution: 'random' };
 
@@ -332,9 +347,10 @@
       const row = document.createElement('div');
       row.className = 'agent-row';
       const accLabel = def.accuracy < 1 ? `${(def.accuracy * 100).toFixed(0)}% acc` : '100% acc';
+      const effLabel = def.explorationEfficiency > 0 ? ` · ${(def.explorationEfficiency * 100).toFixed(0)}% eff` : '';
       row.innerHTML = `
         <span class="agent-color-dot" style="background:${omColor(i)}"></span>
-        <span class="agent-row-label">${def.permutations} perms · ${accLabel}</span>
+        <span class="agent-row-label">${def.permutations} perms · ${accLabel}${effLabel}</span>
         <button class="agent-remove" title="Remove">✕</button>
       `;
       row.querySelector('.agent-remove').addEventListener('click', e => {
@@ -363,9 +379,10 @@
 
   function openModal(idx) {
     editingIdx = (idx !== null && idx !== undefined) ? idx : null;
-    const def = editingIdx !== null ? omAgentDefs[editingIdx] : { permutations: 4, accuracy: 1 };
+    const def = editingIdx !== null ? omAgentDefs[editingIdx] : { permutations: 4, accuracy: 1, explorationEfficiency: 0 };
     modalPerms = def.permutations;
     modalAccuracy = def.accuracy;
+    modalEfficiency = def.explorationEfficiency;
 
     document.getElementById('modalTitle').textContent =
       editingIdx !== null ? 'Edit Open-minded Agent' : 'Add Open-minded Agent';
@@ -375,6 +392,8 @@
     markActive(document.getElementById('modalPermPresets'), String(modalPerms));
     markActive(document.getElementById('modalAccPresets'), String(modalAccuracy));
     document.getElementById('modalAccInput').value = Math.round(modalAccuracy * 100);
+    markActive(document.getElementById('modalEffPresets'), String(modalEfficiency));
+    document.getElementById('modalEffInput').value = Math.round(modalEfficiency * 100);
 
     document.getElementById('modalOverlay').classList.add('open');
   }
@@ -412,8 +431,23 @@
     markActive(document.getElementById('modalAccPresets'), String(v / 100));
   });
 
+  document.getElementById('modalEffPresets').querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      modalEfficiency = +btn.dataset.val;
+      document.getElementById('modalEffInput').value = Math.round(modalEfficiency * 100);
+      markActive(document.getElementById('modalEffPresets'), btn.dataset.val);
+    });
+  });
+
+  document.getElementById('modalEffInput').addEventListener('change', () => {
+    const v = Math.max(0, Math.min(100, +document.getElementById('modalEffInput').value));
+    document.getElementById('modalEffInput').value = v;
+    modalEfficiency = v / 100;
+    markActive(document.getElementById('modalEffPresets'), String(v / 100));
+  });
+
   document.getElementById('modalAccept').addEventListener('click', () => {
-    const def = { permutations: modalPerms, accuracy: modalAccuracy };
+    const def = { permutations: modalPerms, accuracy: modalAccuracy, explorationEfficiency: modalEfficiency };
     if (editingIdx !== null) {
       omAgentDefs[editingIdx] = def;
     } else {
@@ -583,6 +617,7 @@
       kind, color,
       permutations: opts.permutations || 0,
       accuracy: opts.accuracy ?? 1,
+      explorationEfficiency: opts.explorationEfficiency ?? 0,
       heading: opts.heading ?? null,
       x: 0, y: 0,
       path: [{ x: 0, y: 0 }],
@@ -605,7 +640,7 @@
     maxMoves = Math.max(1200, Math.ceil(params.goalDistance / WORLD_STEP) * 3);
 
     omAgentDefs.forEach((def, i) => {
-      agents.push(makeAgent('om', omColor(i), { permutations: def.permutations, accuracy: def.accuracy }));
+      agents.push(makeAgent('om', omColor(i), { permutations: def.permutations, accuracy: def.accuracy, explorationEfficiency: def.explorationEfficiency }));
     });
 
     const swarm = params.pop > 1;
@@ -631,19 +666,29 @@
   function planOMStep(a) {
     const center = { x: a.x, y: a.y };
     const { x: gx, y: gy } = goalPos();
-    const candidates = [];
+    const currentDist = dist(center.x, center.y, gx, gy);
 
-    for (const ang of candidateAngles(a.permutations)) {
-      candidates.push({ x: center.x + Math.cos(ang) * WORLD_STEP, y: center.y + Math.sin(ang) * WORLD_STEP });
-    }
+    // Build candidates: wrong-direction paths are scaled short by exploration efficiency
+    const angles = candidateAngles(a.permutations);
+    const candidates = angles.map(ang => {
+      const fx = center.x + Math.cos(ang) * WORLD_STEP;
+      const fy = center.y + Math.sin(ang) * WORLD_STEP;
+      const isWorse = dist(fx, fy, gx, gy) > currentDist;
+      const scale = (isWorse && a.explorationEfficiency > 0) ? Math.max(0.01, 1 - a.explorationEfficiency) : 1;
+      return { x: center.x + Math.cos(ang) * WORLD_STEP * scale, y: center.y + Math.sin(ang) * WORLD_STEP * scale, fullX: fx, fullY: fy };
+    });
+
     const bestIdx = pickBestByAccuracy(candidates, gx, gy, a.accuracy);
 
+    // Waypoints use scaled explore positions; final commit uses full step distance
+    const bestFull = { x: candidates[bestIdx].fullX, y: candidates[bestIdx].fullY };
     const wp = [{ x: center.x, y: center.y }];
     for (let i = 0; i < candidates.length; i++) {
       wp.push({ x: candidates[i].x, y: candidates[i].y });
       if (!(i === bestIdx && i === candidates.length - 1)) wp.push({ x: center.x, y: center.y });
     }
-    if (bestIdx !== candidates.length - 1) wp.push({ x: candidates[bestIdx].x, y: candidates[bestIdx].y });
+    if (bestIdx !== candidates.length - 1) wp.push(bestFull);
+    else wp[wp.length - 1] = bestFull; // replace scaled with full for the commit
 
     a.moves++;
     a.previewCount += a.permutations;
@@ -763,7 +808,8 @@
     omAgents.forEach((om, i) => {
       const label = omAgents.length > 1 ? `OM ${i + 1}` : 'Open-minded';
       const accLabel = om.accuracy < 1 ? ` · ${(om.accuracy * 100).toFixed(0)}% acc` : '';
-      lines.push(`<div class="row"><span class="k" style="color:${omColor(i)}">${label}</span><span class="v">${om.permutations} perms${accLabel} · ${om.moves} moves · ${fmt(om.finishedAt || 0)}</span></div>`);
+      const effLabel = om.explorationEfficiency > 0 ? ` · ${(om.explorationEfficiency * 100).toFixed(0)}% eff` : '';
+      lines.push(`<div class="row"><span class="k" style="color:${omColor(i)}">${label}</span><span class="v">${om.permutations} perms${accLabel}${effLabel} · ${om.moves} moves · ${fmt(om.finishedAt || 0)}</span></div>`);
       if (omAgents.length === 1) {
         lines.push(`<div class="row"><span class="k">Testing cost</span><span class="v">${om.previewCount} dirs tested · ${om.travelLegs} legs</span></div>`);
       }
